@@ -11,25 +11,62 @@ export type CaptureMode = 'natural' | 'raw' | 'proraw';
 
 export const CAPTURE_MODES: readonly CaptureMode[] = ['natural', 'raw', 'proraw'];
 
-export const MODE_INFO: Record<CaptureMode, { label: string; format: string; size: string }> = {
-  natural: { label: 'Natural', format: 'JPEG', size: '~4 MB' },
-  raw: { label: 'RAW', format: 'DNG', size: '~18 MB' },
-  proraw: { label: 'ProRAW', format: 'DNG', size: '~50 MB' },
+export const MODE_INFO: Record<CaptureMode, { label: string; format: string }> = {
+  natural: { label: 'Natural', format: 'JPEG' },
+  raw: { label: 'RAW', format: 'DNG' },
+  proraw: { label: 'ProRAW', format: 'DNG' },
 };
 
 export type Facing = 'back' | 'front';
+
+/** Satu lensa fisik: panjang fokus setara 35 mm (seperti di spesifikasi iPhone). */
+export interface Lens {
+  id: string;
+  facing: Facing;
+  mm: number;
+  /** Perangkat kamera browser untuk lensa ini (web). */
+  deviceId?: string;
+}
+
+/** Lensa bawaan sebelum daftar perangkat terbaca (izin kamera belum diberikan). */
+export const DEFAULT_LENSES: readonly Lens[] = [
+  { id: 'back', facing: 'back', mm: 24 },
+  { id: 'front', facing: 'front', mm: 23 },
+];
+
+/**
+ * Lensa dari nama perangkat Safari iOS ("Back Ultra Wide Camera", "Back
+ * Camera", "Back Telephoto Camera", "Front Camera"). Kamera virtual (Dual,
+ * Triple) dilewati. Panjang fokus web = perkiraan per jenis lensa iPhone
+ * (tele berbeda per model: 52/77/120 mm); versi native membaca nilai
+ * sebenarnya dari perangkat.
+ */
+export function lensesFromDevices(devices: ReadonlyArray<{ deviceId: string; label: string }>): Lens[] {
+  const lenses: Lens[] = [];
+  for (const d of devices) {
+    const label = d.label.toLowerCase();
+    if (!label || /dual|triple|desk view/.test(label)) continue;
+    const front = /front|user|facetime|depan/.test(label);
+    const mm = front ? 23 : /ultra ?wide/.test(label) ? 13 : /tele/.test(label) ? 77 : 24;
+    const facing: Facing = front ? 'front' : 'back';
+    if (lenses.some((l) => l.facing === facing && l.mm === mm)) continue;
+    lenses.push({ id: `${facing}-${mm}`, facing, mm, deviceId: d.deviceId });
+  }
+  if (!lenses.some((l) => l.facing === 'back')) lenses.unshift(...DEFAULT_LENSES.filter((l) => l.facing === 'back'));
+  return lenses.sort((a, b) => (a.facing === b.facing ? a.mm - b.mm : a.facing === 'back' ? -1 : 1));
+}
 
 export interface CameraBackend {
   /** Nama untuk label kecil di layar ("Web preview" / "iPhone"). */
   readonly name: string;
   /** Mode yang benar-benar didukung perangkat ini (yang lain tampil, tetapi jatuh ke format web). */
   readonly modes: readonly CaptureMode[];
-  /** Pembesaran yang tersedia (lensa native; web = digital). */
-  readonly zooms: readonly number[];
-  start(video: HTMLVideoElement, facing: Facing): Promise<void>;
+  /** Lensa fisik perangkat ini (setelah `start` pertama; sebelum itu `DEFAULT_LENSES`). */
+  lenses(): Promise<Lens[]>;
+  start(video: HTMLVideoElement, lens: Lens): Promise<void>;
   stop(): void;
-  /** Jepret: frame penuh, `zoom` dipotong dari tengah. */
-  capture(mode: CaptureMode, opts: { zoom: number; facing: Facing }): Promise<File>;
+  /** Jepret frame penuh lensa yang aktif. */
+  capture(mode: CaptureMode, opts: { facing: Facing }): Promise<File>;
 }
 
 function stamp(d = new Date()): string {
@@ -45,17 +82,28 @@ export class CameraUnavailableError extends Error {
 export class WebCamera implements CameraBackend {
   readonly name = 'Web preview';
   readonly modes: readonly CaptureMode[] = ['natural'];
-  readonly zooms: readonly number[] = [1, 2, 5];
   #stream: MediaStream | undefined;
   #video: HTMLVideoElement | undefined;
 
-  async start(video: HTMLVideoElement, facing: Facing): Promise<void> {
+  async lenses(): Promise<Lens[]> {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      return lensesFromDevices(devices.filter((d) => d.kind === 'videoinput'));
+    } catch {
+      return [...DEFAULT_LENSES];
+    }
+  }
+
+  async start(video: HTMLVideoElement, lens: Lens): Promise<void> {
     this.stop();
     if (!navigator.mediaDevices?.getUserMedia) throw new CameraUnavailableError('This browser can’t use the camera.');
     try {
       this.#stream = await navigator.mediaDevices.getUserMedia({
         audio: false,
-        video: { facingMode: facing === 'back' ? 'environment' : 'user', width: { ideal: 4032 }, height: { ideal: 3024 } },
+        video: {
+          ...(lens.deviceId ? { deviceId: { exact: lens.deviceId } } : { facingMode: lens.facing === 'back' ? 'environment' : 'user' }),
+          width: { ideal: 4032 }, height: { ideal: 3024 },
+        },
       });
     } catch (error) {
       const denied = error instanceof DOMException && (error.name === 'NotAllowedError' || error.name === 'SecurityError');
@@ -74,10 +122,10 @@ export class WebCamera implements CameraBackend {
     if (this.#video) this.#video.srcObject = null;
   }
 
-  async capture(_mode: CaptureMode, { zoom, facing }: { zoom: number; facing: Facing }): Promise<File> {
+  async capture(_mode: CaptureMode, { facing }: { facing: Facing }): Promise<File> {
     const video = this.#video;
     if (!video || !video.videoWidth) throw new CameraUnavailableError('The camera isn’t ready yet.');
-    const w = Math.round(video.videoWidth / zoom), h = Math.round(video.videoHeight / zoom);
+    const w = video.videoWidth, h = video.videoHeight;
     const canvas = document.createElement('canvas');
     canvas.width = w;
     canvas.height = h;
@@ -85,7 +133,7 @@ export class WebCamera implements CameraBackend {
     if (!ctx) throw new CameraUnavailableError('Couldn’t take the photo.');
     // Kamera depan: simpan seperti yang terlihat di jendela bidik (cermin).
     if (facing === 'front') { ctx.translate(w, 0); ctx.scale(-1, 1); }
-    ctx.drawImage(video, (video.videoWidth - w) / 2, (video.videoHeight - h) / 2, w, h, 0, 0, w, h);
+    ctx.drawImage(video, 0, 0, w, h);
     const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.95));
     if (!blob) throw new CameraUnavailableError('Couldn’t take the photo.');
     return new File([blob], `gamma_${stamp()}.jpg`, { type: 'image/jpeg', lastModified: Date.now() });

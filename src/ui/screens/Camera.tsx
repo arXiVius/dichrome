@@ -16,7 +16,8 @@ import { haptic } from '../haptics';
 import { LiveLook, loadLooks, lookKey } from '../engine/looks';
 import { stockInfo } from '../model/stocks';
 import { CAPTURE_MODES, CameraUnavailableError, MODE_INFO, WebCamera } from '../camera/backend';
-import type { CameraBackend, CaptureMode, Facing } from '../camera/backend';
+import { DEFAULT_LENSES } from '../camera/backend';
+import type { CameraBackend, CaptureMode, Lens } from '../camera/backend';
 
 const PAPER = 'kodak_portra_endura';
 const FILMS = ['kodak_portra_400', 'kodak_gold_200', 'kodak_ektar_100', 'kodak_portra_800', 'kodak_ultramax_400', 'kodak_vision3_500t', 'fujifilm_pro_400h', 'fujifilm_c200'];
@@ -65,8 +66,9 @@ export function CameraScreen({ onClose, onCaptured, lastThumb, onOpenLast }: {
   const [film, setFilm] = useState<string>(() => store.get('gamma.camera.film', FILMS[0]!, FILMS));
   const [lookOn, setLookOn] = useState(() => store.get('gamma.camera.look', 'on', ['on', 'off']) === 'on');
   const [grid, setGrid] = useState(() => store.get('gamma.camera.grid', 'on', ['on', 'off']) === 'on');
-  const [facing, setFacing] = useState<Facing>('back');
-  const [zoom, setZoom] = useState(1);
+  const [lenses, setLenses] = useState<readonly Lens[]>(DEFAULT_LENSES);
+  const [lens, setLens] = useState<Lens>(DEFAULT_LENSES[0]!);
+  const facing = lens.facing;
   const [ev, setEv] = useState(0);
   const [wb, setWb] = useState(0);
   const [focus, setFocus] = useState<{ x: number; y: number } | null>(null);
@@ -89,12 +91,20 @@ export function CameraScreen({ onClose, onCaptured, lastThumb, onOpenLast }: {
     let alive = true;
     setLive(false);
     setError(null);
-    backend.start(v, facing).then(
-      () => { if (alive) setError(null); },
+    backend.start(v, lens).then(
+      async () => {
+        if (!alive) return;
+        setError(null);
+        // Nama lensa baru terbaca setelah izin kamera: ganti daftar bawaan dengan lensa sebenarnya.
+        const found = await backend.lenses();
+        if (!alive) return;
+        setLenses(found);
+        if (!lens.deviceId) setLens(found.find((l) => l.facing === lens.facing && l.mm === 24) ?? found.find((l) => l.facing === lens.facing) ?? lens);
+      },
       (e: unknown) => { if (alive) setError(e instanceof CameraUnavailableError ? e.message : 'Couldn’t start the camera.'); },
     );
     return () => { alive = false; backend.stop(); };
-  }, [backend, facing]);
+  }, [backend, lens]);
 
   // Jendela bidik: tiap frame video lewat look live.
   useEffect(() => {
@@ -117,7 +127,7 @@ export function CameraScreen({ onClose, onCaptured, lastThumb, onOpenLast }: {
     setBusy(true);
     setFlash((n) => n + 1);
     try {
-      onCaptured(await backend.capture(mode, { zoom, facing }));
+      onCaptured(await backend.capture(mode, { facing }));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Couldn’t take the photo.');
       setBusy(false);
@@ -161,7 +171,7 @@ export function CameraScreen({ onClose, onCaptured, lastThumb, onOpenLast }: {
         >
           {MODE_INFO[mode].label}
         </button>
-        <span className="cam-format">{MODE_INFO[mode].format} · {MODE_INFO[mode].size}{supported ? '' : ` · ${backend.name}: JPEG`}</span>
+        <span className="cam-format">{MODE_INFO[mode].format}{supported ? '' : ` · ${backend.name}: JPEG`}</span>
         <div className="cam-top-actions">
           <button type="button" className="cam-icon" aria-label="Grid" aria-pressed={grid} onClick={() => { haptic(); setGrid((g) => !g); }}>
             <Icon name="grid" size={20} />
@@ -185,7 +195,7 @@ export function CameraScreen({ onClose, onCaptured, lastThumb, onOpenLast }: {
           ref={canvas}
           className="cam-canvas"
           data-live={live || undefined}
-          style={{ transform: `scale(${facing === 'front' ? -zoom : zoom}, ${zoom})` }}
+          style={{ transform: facing === 'front' ? 'scaleX(-1)' : undefined }}
           aria-label="Viewfinder"
           role="img"
         />
@@ -203,14 +213,18 @@ export function CameraScreen({ onClose, onCaptured, lastThumb, onOpenLast }: {
         {flash > 0 && <span key={flash} className="cam-flash" aria-hidden="true" />}
         <div className="cam-finder-bar">
           <span className="cam-chip-spacer" aria-hidden="true" />
-          <div className="cam-zooms" role="radiogroup" aria-label="Zoom">
-            {backend.zooms.map((z) => (
-              <button key={z} type="button" role="radio" aria-checked={zoom === z} className="cam-zoom" onClick={() => { haptic(); setZoom(z); }}>
-                {zoom === z ? <>{z}<small>×</small></> : z}
+          <div className="cam-lenses" role="radiogroup" aria-label="Lens">
+            {lenses.filter((l) => l.facing === facing).map((l) => (
+              <button key={l.id} type="button" role="radio" aria-checked={lens.id === l.id} className="cam-lens" onClick={() => { if (l.id !== lens.id) { haptic(); setLens(l); } }}>
+                {l.mm}mm
               </button>
             ))}
           </div>
-          <button type="button" className="cam-icon cam-flip" aria-label="Switch camera" onClick={() => { haptic(); setFacing((f) => (f === 'back' ? 'front' : 'back')); setZoom(1); }}>
+          <button type="button" className="cam-icon cam-flip" aria-label="Switch camera" onClick={() => {
+            haptic();
+            const other = facing === 'back' ? 'front' : 'back';
+            setLens(lenses.find((l) => l.facing === other && (other === 'front' || l.mm === 24)) ?? lenses.find((l) => l.facing === other) ?? DEFAULT_LENSES.find((l) => l.facing === other)!);
+          }}>
             <Icon name="switchCamera" size={20} />
           </button>
         </div>
