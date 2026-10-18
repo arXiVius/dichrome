@@ -110,7 +110,7 @@ export function IntroBackdrop({ canvasRef }: { canvasRef: RefObject<HTMLCanvasEl
 
 /** Sama dengan latar `.intro-sky`: radial-gradient(ellipse 70% 38%/34% at 50% 104%, biru, transparent 70%). */
 function paintSky(ctx: CanvasRenderingContext2D, w: number, h: number, dark: boolean) {
-  const [rgb, alpha, ry] = dark ? ['0, 120, 255', 0.34, 0.38] : ['0, 145, 255', 0.16, 0.34];
+  const [rgb, alpha, ry] = dark ? ['10, 132, 255', 0.34, 0.38] : ['10, 132, 255', 0.16, 0.34];
   ctx.save();
   ctx.translate(w / 2, h * 1.04);
   ctx.scale(w * 0.7, h * ry);
