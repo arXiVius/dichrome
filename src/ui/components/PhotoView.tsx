@@ -30,6 +30,7 @@ import type { Box } from './PhotoLightbox';
 import { previewPixelBudget } from '../../io/budget';
 import { LookLayer } from './LookLayer';
 import { Loupe } from './Loupe';
+import { EDITOR_PHOTO_RADIUS } from './PhotoFlight';
 import type { LoupeTarget } from './Loupe';
 import { boxToImage, cropLayerStyle, imageToBox, isIdentityCrop } from '../../io/geometry';
 import type { Crop } from '../../io/geometry';
@@ -715,7 +716,8 @@ export function PhotoView({
             // disembunyikan, supaya tidak tampak dua foto di balik latar yang memudar.
             style={{ position: 'absolute', left: rect.left, top: rect.top, width: rect.width, height: rect.height, visibility: fullscreen ? 'hidden' : undefined }}
           >
-            <div style={{ position: 'absolute', inset: 0, transformOrigin: '0 0', transform: `translate(${view.tx}px, ${view.ty}px) scale(${view.s})` }}>
+            {/* Sudut membulat ikut foto (tetap sama di layar saat diperbesar). */}
+            <div style={{ position: 'absolute', inset: 0, transformOrigin: '0 0', transform: `translate(${view.tx}px, ${view.ty}px) scale(${view.s})`, borderRadius: EDITOR_PHOTO_RADIUS / view.s, overflow: 'hidden' }}>
               <CropLayer crop={activeCrop} a={aspectA}>
                 {content ?? (frame && <FrameCanvas key={frame.colorSpace} frame={frame} />)}
                 {!content && <LookLayer image={look} />}

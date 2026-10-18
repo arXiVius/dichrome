@@ -217,6 +217,9 @@ async function stableBox(get: () => Element | null, ms: number, alive: () => boo
   return last;
 }
 
+/** Sudut foto di editor (px layar); foto terbang mendarat dan berangkat dengan sudut ini. */
+export const EDITOR_PHOTO_RADIUS = 12;
+
 export function PhotoFlight() {
   const flight = useSyncExternalStore(subscribe, getFlight, getFlight);
   const outerRef = useRef<HTMLDivElement>(null);
@@ -251,7 +254,7 @@ export function PhotoFlight() {
     void (async () => {
       await waitFor(() => slatElement(flight.projectId), 900, alive);
       const target = await stableBox(() => slatElement(flight.projectId), 500, alive);
-      if (target && alive()) await fly(outer, inner, flight.from, target, flight.aspect, 0, 14);
+      if (target && alive()) await fly(outer, inner, flight.from, target, flight.aspect, EDITOR_PHOTO_RADIUS, 14);
       if (!alive()) return;
       // Foto bilah muncul di bawah salinan pada frame yang sama, lalu salinan memudar.
       setStage(undefined);
@@ -299,7 +302,7 @@ export function PhotoFlight() {
         if (box) {
           lastPhotoBox = box;
           setStage('land');
-          await fly(outer, inner, at.current.box, box, flight.aspect, at.current.radius, 0);
+          await fly(outer, inner, at.current.box, box, flight.aspect, at.current.radius, EDITOR_PHOTO_RADIUS);
         }
       } else {
         setStage(undefined);
