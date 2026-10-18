@@ -161,6 +161,7 @@ export function CameraScreen({ onClose, onCaptured, lastThumb, onOpenLast }: {
         >
           {MODE_INFO[mode].label}
         </button>
+        <span className="cam-format">{MODE_INFO[mode].format} · {MODE_INFO[mode].size}{supported ? '' : ` · ${backend.name}: JPEG`}</span>
         <div className="cam-top-actions">
           <button type="button" className="cam-icon" aria-label="Grid" aria-pressed={grid} onClick={() => { haptic(); setGrid((g) => !g); }}>
             <Icon name="grid" size={20} />
