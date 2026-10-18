@@ -208,3 +208,109 @@ export class LookRenderer {
     return createImageBitmap(this.#canvas);
   }
 }
+
+const LIVE_FRAG = `#version 300 es
+precision highp float; precision highp sampler3D;
+uniform sampler2D src; uniform sampler3D lut; uniform float n; uniform float useLut;
+uniform float gain; uniform vec3 wb;
+in vec2 uv; out vec4 color;
+void main() {
+  vec3 c = texture(src, uv).rgb;
+  // Exposure dan white balance di cahaya linear (perkiraan gamma 2,2), lalu kembali ter-encode.
+  c = pow(clamp(pow(c, vec3(2.2)) * gain * wb, 0.0, 1.0), vec3(1.0 / 2.2));
+  if (useLut > 0.5) c = texture(lut, (c * (n - 1.0) + 0.5) / n).rgb;
+  color = vec4(c, 1.0);
+}`;
+
+export interface LiveLookOptions {
+  /** Look LUT (`lookKey`), atau `undefined` untuk tanpa look. */
+  look?: string;
+  /** Kompensasi exposure (EV). */
+  ev?: number;
+  /** Penguat white balance R, G, B (1 = netral). */
+  wb?: readonly [number, number, number];
+}
+
+/**
+ * Jendela bidik kamera: frame video live -> exposure, white balance, look LUT
+ * di kanvas yang terlihat (WebGL2, satu draw call per frame). `snapshot`
+ * menggambar ulang frame saat itu tanpa look (Natural) pada resolusi penuh.
+ */
+export class LiveLook {
+  readonly #gl: WebGL2RenderingContext | null;
+  #program: WebGLProgram | null = null;
+  #src: WebGLTexture | null = null;
+  #lut: WebGLTexture | null = null;
+  #lutKey: string | undefined;
+
+  constructor(readonly canvas: HTMLCanvasElement) {
+    this.#gl = canvas.getContext('webgl2', { premultipliedAlpha: false, preserveDrawingBuffer: true }) as WebGL2RenderingContext | null;
+    const gl = this.#gl;
+    if (!gl) return;
+    const shader = (type: number, text: string) => {
+      const s = gl.createShader(type)!;
+      gl.shaderSource(s, text);
+      gl.compileShader(s);
+      return s;
+    };
+    const program = gl.createProgram()!;
+    gl.attachShader(program, shader(gl.VERTEX_SHADER, VERT));
+    gl.attachShader(program, shader(gl.FRAGMENT_SHADER, LIVE_FRAG));
+    gl.linkProgram(program);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) return;
+    this.#program = program;
+    gl.useProgram(program);
+    gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+    const loc = gl.getAttribLocation(program, 'p');
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+    gl.uniform1i(gl.getUniformLocation(program, 'src'), 0);
+    gl.uniform1i(gl.getUniformLocation(program, 'lut'), 1);
+    this.#src = gl.createTexture();
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.#src);
+    for (const p of [gl.TEXTURE_MIN_FILTER, gl.TEXTURE_MAG_FILTER]) gl.texParameteri(gl.TEXTURE_2D, p, gl.LINEAR);
+    for (const p of [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T]) gl.texParameteri(gl.TEXTURE_2D, p, gl.CLAMP_TO_EDGE);
+  }
+
+  get ok(): boolean {
+    return !!this.#program;
+  }
+
+  /** Gambar satu frame video. `false` bila belum ada frame. */
+  draw(video: HTMLVideoElement, opts: LiveLookOptions): boolean {
+    const gl = this.#gl;
+    if (!gl || !this.#program || video.readyState < 2 || !video.videoWidth) return false;
+    const t = loaded;
+    const bytes = opts.look && t ? lutBytes(t, opts.look) : undefined;
+    if (bytes && t && this.#lutKey !== opts.look) {
+      this.#lut ??= gl.createTexture();
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_3D, this.#lut);
+      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+      gl.texImage3D(gl.TEXTURE_3D, 0, gl.RGB8, t.size, t.size, t.size, 0, gl.RGB, gl.UNSIGNED_BYTE, bytes);
+      for (const p of [gl.TEXTURE_MIN_FILTER, gl.TEXTURE_MAG_FILTER]) gl.texParameteri(gl.TEXTURE_3D, p, gl.LINEAR);
+      for (const p of [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T, gl.TEXTURE_WRAP_R]) gl.texParameteri(gl.TEXTURE_3D, p, gl.CLAMP_TO_EDGE);
+      this.#lutKey = opts.look;
+    }
+    if (this.canvas.width !== video.videoWidth || this.canvas.height !== video.videoHeight) {
+      this.canvas.width = video.videoWidth;
+      this.canvas.height = video.videoHeight;
+    }
+    gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.#src);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, video);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_3D, this.#lut);
+    const u = (name: string) => gl.getUniformLocation(this.#program!, name);
+    gl.uniform1f(u('n'), t?.size ?? LOOK_SIZE);
+    gl.uniform1f(u('useLut'), bytes ? 1 : 0);
+    gl.uniform1f(u('gain'), 2 ** (opts.ev ?? 0));
+    const [r, g, b] = opts.wb ?? [1, 1, 1];
+    gl.uniform3f(u('wb'), r, g, b);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    return true;
+  }
+}

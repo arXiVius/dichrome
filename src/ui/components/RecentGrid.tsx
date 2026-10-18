@@ -5,8 +5,8 @@
  * buram melayang di bawah. Ketuk ubin = buka (foto terbang ke editor), tekan
  * lama / klik kanan = menu proyek (Rename, Duplicate, Delete).
  */
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { motion, useReducedMotion } from 'motion/react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import type { ProjectCard } from '../projects/projects';
 import { recipeParts, relativeTime } from '../projects/format';
 import { haptic } from '../haptics';
@@ -21,12 +21,13 @@ const HOLD_SLOP = 10;
 /** Rasio ubin dijepit supaya panorama/potret ekstrem tetap enak dilihat. */
 const clampAspect = (r: number) => Math.min(1.8, Math.max(0.56, r));
 
-export function RecentGrid({ cards, onOpen, onRelink, onMenu, onNew, onSettings, hint }: {
+export function RecentGrid({ cards, onOpen, onRelink, onMenu, onNew, onCamera, onSettings, hint }: {
   cards: readonly ProjectCard[];
   onOpen: (card: ProjectCard) => void;
   onRelink: (card: ProjectCard) => void;
   onMenu: (card: ProjectCard, anchor: DOMRect) => void;
   onNew: () => void;
+  onCamera: () => void;
   onSettings: () => void;
   hint?: string;
 }) {
@@ -37,13 +38,6 @@ export function RecentGrid({ cards, onOpen, onRelink, onMenu, onNew, onSettings,
   // Tanpa animasi masuk saat foto sedang terbang kembali ke ubinnya.
   const [enter] = useState(() => !isClosingFlight() && !reduce);
   const hold = useRef<{ timer: number; x: number; y: number; fired: boolean } | null>(null);
-  /** Pesan "Camera is coming soon" di atas dock, hilang sendiri. */
-  const [soon, setSoon] = useState(false);
-  useEffect(() => {
-    if (!soon) return undefined;
-    const t = window.setTimeout(() => setSoon(false), 1800);
-    return () => window.clearTimeout(t);
-  }, [soon]);
 
   useLayoutEffect(() => {
     const el = scroller.current;
@@ -156,25 +150,10 @@ export function RecentGrid({ cards, onOpen, onRelink, onMenu, onNew, onSettings,
           ))}
         </div>
       </div>
-      {/* Dock: kamera (segera), + foto baru (kaca biru), Settings. */}
+      {/* Dock: kamera, + foto baru (kaca biru), Settings. */}
       <div className="bento-dock">
-        <AnimatePresence>
-          {soon && (
-            <motion.span
-              key="soon"
-              className="dock-soon"
-              role="status"
-              initial={{ opacity: 0, y: 8, scale: 0.92 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 4, scale: 0.96 }}
-              transition={{ type: 'spring', duration: 0.35, bounce: 0.15 }}
-            >
-              <Icon name="camera" size={15} /> Camera is coming soon
-            </motion.span>
-          )}
-        </AnimatePresence>
         <div className="dock-bar">
-          <motion.button type="button" className="dock-side" aria-label="Camera" whileTap={{ scale: 0.9 }} onClick={() => { haptic(); setSoon(true); }}>
+          <motion.button type="button" className="dock-side" aria-label="Camera" whileTap={{ scale: 0.9 }} onClick={() => { haptic(); onCamera(); }}>
             <Icon name="camera" size={21} />
           </motion.button>
           <motion.button type="button" className="dock-plus" whileTap={{ scale: 0.95 }} onClick={() => { haptic(); onNew(); }}>

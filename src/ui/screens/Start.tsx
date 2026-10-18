@@ -22,6 +22,7 @@ import { engine } from '../engine/engine';
 import type { ProjectCard } from '../projects/projects';
 import { ProjectsContent } from './Projects';
 import { SettingsContent } from './Settings';
+import { CameraScreen } from './Camera';
 import { dayGroup } from '../projects/format';
 import { overlay, pressRelease, pressScale, scrimMotion } from '../motion';
 import { useEffect } from 'react';
@@ -46,6 +47,7 @@ export function DropZone({ onChoose: choose, engineFailed }: { onChoose: () => v
   const [menu, setMenu] = useState<{ card: ProjectCard; anchor: DOMRect } | null>(null);
   const [allOpen, setAllOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [cameraOpen, setCameraOpen] = useState(false);
   const [renaming, setRenaming] = useState<string | undefined>();
   const relink = (card: ProjectCard) => {
     projects.requestRelink(card.id);
@@ -180,6 +182,7 @@ export function DropZone({ onChoose: choose, engineFailed }: { onChoose: () => v
           onRelink={relink}
           onMenu={(card, anchor) => setMenu({ card, anchor })}
           onNew={onChoose}
+          onCamera={() => { engine.start(); setCameraOpen(true); }}
           onSettings={() => setSettingsOpen(true)}
           hint={touch ? undefined : 'drop a photo anywhere'}
         />
@@ -230,6 +233,18 @@ export function DropZone({ onChoose: choose, engineFailed }: { onChoose: () => v
         ] : []}
         onCancel={() => setMenu(null)}
       />
+
+      <AnimatePresence>
+        {cameraOpen && (
+          <CameraScreen
+            key="camera"
+            onClose={() => setCameraOpen(false)}
+            onCaptured={(file) => { setCameraOpen(false); projects.requestRelink(undefined); void projects.openFile(file); }}
+            lastThumb={proj.list[0]?.thumb}
+            onOpenLast={proj.list[0] ? () => { const c = proj.list[0]!; setCameraOpen(false); openProject(c); } : undefined}
+          />
+        )}
+      </AnimatePresence>
 
       <Sheet
         open={settingsOpen}
