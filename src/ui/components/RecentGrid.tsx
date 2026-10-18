@@ -177,8 +177,9 @@ export function RecentGrid({ cards, onOpen, onRelink, onMenu, onNew, onSettings,
           <motion.button type="button" className="dock-side" aria-label="Camera" whileTap={{ scale: 0.9 }} onClick={() => { haptic(); setSoon(true); }}>
             <Icon name="camera" size={21} />
           </motion.button>
-          <motion.button type="button" className="dock-plus" aria-label="New photo" whileTap={{ scale: 0.9 }} onClick={() => { haptic(); onNew(); }}>
-            <Icon name="plus" size={26} strokeWidth={2.4} />
+          <motion.button type="button" className="dock-plus" whileTap={{ scale: 0.95 }} onClick={() => { haptic(); onNew(); }}>
+            <Icon name="plus" size={18} strokeWidth={2.4} />
+            New photo
           </motion.button>
           <motion.button type="button" className="dock-side" aria-label="Settings" whileTap={{ scale: 0.9 }} onClick={() => { haptic(); onSettings(); }}>
             <Icon name="settings" size={21} />
