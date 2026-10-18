@@ -1941,8 +1941,7 @@ html[data-flight="close"] .bento-tile[data-flying] { visibility: hidden; }
   letter-spacing: 0.16em; text-transform: uppercase; cursor: pointer;
 }
 .cam-mode[data-unsupported] { color: rgba(255, 255, 255, 0.72); text-decoration: line-through; text-decoration-color: #ff453a; text-decoration-thickness: 2px; }
-.cam-format { flex: 1; min-width: 0; font-size: 11px; color: rgba(235, 235, 245, 0.5); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.cam-top-actions { display: flex; gap: 2px; }
+.cam-top-actions { display: flex; gap: 2px; margin-left: auto; }
 .cam-icon {
   width: 44px; height: 44px; border: 0; border-radius: 22px; background: none; color: #fff; padding: 0;
   display: flex; align-items: center; justify-content: center; cursor: pointer;
