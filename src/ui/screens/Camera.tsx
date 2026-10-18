@@ -1,9 +1,10 @@
 /**
- * Kamera gammā (dari dock Welcome back). Atas: mode jepret (Natural / RAW /
- * ProRAW; yang belum didukung perangkat dicoret) dan grid. Tengah: jendela
- * bidik bersudut membulat dengan look film live, titik fokus, pembesaran,
- * balik kamera. Bawah: pelat kontrol (foto terakhir, white balance, film,
- * tombol jepret + saklar look, mode exposure, EV/SS, penggaris EV).
+ * Kamera gammā (dari dock Welcome back), gaya rangefinder retro-modern.
+ * Atas: mode jepret (Natural / RAW / ProRAW; yang belum didukung perangkat
+ * dicoret) dan grid. Tengah: jendela bidik 3:4 dengan look film live, data
+ * kecil (WB, ISO, EV), lensa (mm), balik kamera. Bawah: jendela film (kemasan
+ * stok; ketuk = ganti film), tombol jepret bercincin, penghitung frame roll,
+ * dial EV horizontal. Jepret = tirai shutter + frame berkurang satu.
  *
  * Tampilan saja di sini; jepretan lewat `CameraBackend` (sekarang WebCamera,
  * nanti plugin native) jadi UI ini tetap saat port native.
@@ -21,11 +22,19 @@ import type { CameraBackend, CaptureMode, Lens } from '../camera/backend';
 
 const PAPER = 'kodak_portra_endura';
 const FILMS = ['kodak_portra_400', 'kodak_gold_200', 'kodak_ektar_100', 'kodak_portra_800', 'kodak_ultramax_400', 'kodak_vision3_500t', 'fujifilm_pro_400h', 'fujifilm_c200'];
-/** Singkatan film di braket (seperti kode di kaleng film). */
-const FILM_CODE: Record<string, string> = {
-  kodak_portra_400: 'P400', kodak_gold_200: 'G200', kodak_ektar_100: 'E100', kodak_portra_800: 'P800',
-  kodak_ultramax_400: 'U400', kodak_vision3_500t: '500T', fujifilm_pro_400h: '400H', fujifilm_c200: 'C200',
+/** Jendela film: warna kemasan stok, seperti potongan kotak film di punggung kamera analog. */
+const FILM_BOX: Record<string, { brand: string; speed: string; name: string; bg: string; fg: string }> = {
+  kodak_portra_400: { brand: 'KODAK', speed: '400', name: 'PORTRA', bg: '#e8702a', fg: '#fff' },
+  kodak_gold_200: { brand: 'KODAK', speed: '200', name: 'GOLD', bg: '#f2b705', fg: '#3a1c00' },
+  kodak_ektar_100: { brand: 'KODAK', speed: '100', name: 'EKTAR', bg: '#d6362b', fg: '#fff' },
+  kodak_portra_800: { brand: 'KODAK', speed: '800', name: 'PORTRA', bg: '#c94a26', fg: '#fff' },
+  kodak_ultramax_400: { brand: 'KODAK', speed: '400', name: 'ULTRAMAX', bg: '#2357b5', fg: '#ffd23f' },
+  kodak_vision3_500t: { brand: 'KODAK', speed: '500T', name: 'VISION3', bg: '#2a3d7a', fg: '#fff' },
+  fujifilm_pro_400h: { brand: 'FUJI', speed: '400', name: 'PRO 400H', bg: '#2b9b7a', fg: '#fff' },
+  fujifilm_c200: { brand: 'FUJI', speed: '200', name: 'C200', bg: '#3a8f3a', fg: '#fff' },
 };
+/** Satu roll: penghitung frame mundur dari sini, roll baru otomatis saat habis. */
+const ROLL = 36;
 const WB: ReadonlyArray<{ code: string; name: string; gains: readonly [number, number, number] }> = [
   { code: 'AWB', name: 'Auto', gains: [1, 1, 1] },
   { code: 'DAY', name: 'Daylight', gains: [1.04, 1, 0.95] },
@@ -35,9 +44,9 @@ const WB: ReadonlyArray<{ code: string; name: string; gains: readonly [number, n
   { code: 'FLR', name: 'Fluorescent', gains: [0.9, 1, 1.14] },
 ];
 const EV_STEP = 1 / 3;
-const EV_MAX = 3;
-/** Jarak geser (px) per 1/3 EV di penggaris. */
-const EV_PX = 12;
+const EV_MAX = 2;
+/** Jarak geser horizontal (px) per 1/3 EV di dial. */
+const EV_PX = 14;
 
 const store = {
   get<T extends string>(key: string, fallback: T, allowed: readonly string[]): T {
@@ -48,23 +57,15 @@ const store = {
   },
 };
 
-/** Braket tipis bergradien (gaya pelat kamera Moment); warna di styles.css. */
-function Bracket({ shape }: { shape: 'tl' | 'bl' | 'r' }) {
-  return <span className={`cam-br is-${shape}`} aria-hidden="true" />;
-}
-
-export function CameraScreen({ onClose, onCaptured, lastThumb, onOpenLast }: {
+export function CameraScreen({ onClose, onCaptured }: {
   onClose: () => void;
   onCaptured: (file: File) => void;
-  lastThumb?: string;
-  onOpenLast?: () => void;
 }) {
   const video = useRef<HTMLVideoElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const [backend] = useState<CameraBackend>(() => new WebCamera());
   const [mode, setMode] = useState<CaptureMode>(() => store.get('gamma.camera.mode', 'natural', CAPTURE_MODES));
   const [film, setFilm] = useState<string>(() => store.get('gamma.camera.film', FILMS[0]!, FILMS));
-  const [lookOn, setLookOn] = useState(() => store.get('gamma.camera.look', 'on', ['on', 'off']) === 'on');
   const [grid, setGrid] = useState(() => store.get('gamma.camera.grid', 'on', ['on', 'off']) === 'on');
   const [lenses, setLenses] = useState<readonly Lens[]>(DEFAULT_LENSES);
   const [lens, setLens] = useState<Lens>(DEFAULT_LENSES[0]!);
@@ -75,13 +76,14 @@ export function CameraScreen({ onClose, onCaptured, lastThumb, onOpenLast }: {
   const [error, setError] = useState<string | null>(null);
   const [live, setLive] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [flash, setFlash] = useState(0);
+  const [curtain, setCurtain] = useState(false);
+  const [frames, setFrames] = useState(() => Number(store.get('gamma.camera.frames', String(ROLL), Array.from({ length: ROLL }, (_, i) => String(i + 1)))));
   const opts = useRef({ look: undefined as string | undefined, ev: 0, wb: WB[0]!.gains as readonly [number, number, number] });
-  opts.current = { look: lookOn ? lookKey(film, PAPER, 'printSimulation') : undefined, ev, wb: WB[wb]!.gains };
+  opts.current = { look: lookKey(film, PAPER, 'printSimulation'), ev, wb: WB[wb]!.gains };
 
   useEffect(() => store.set('gamma.camera.mode', mode), [mode]);
   useEffect(() => store.set('gamma.camera.film', film), [film]);
-  useEffect(() => store.set('gamma.camera.look', lookOn ? 'on' : 'off'), [lookOn]);
+  useEffect(() => store.set('gamma.camera.frames', String(frames)), [frames]);
   useEffect(() => store.set('gamma.camera.grid', grid ? 'on' : 'off'), [grid]);
 
   // Kamera hidup selama layar terbuka; ganti arah = mulai ulang.
@@ -125,30 +127,36 @@ export function CameraScreen({ onClose, onCaptured, lastThumb, onOpenLast }: {
     if (busy || !live) return;
     haptic();
     setBusy(true);
-    setFlash((n) => n + 1);
+    // Tirai shutter menutup sesaat, lalu film maju satu frame (roll baru saat habis).
+    setCurtain(true);
+    window.setTimeout(() => setCurtain(false), 140);
+    setFrames((n) => (n <= 1 ? ROLL : n - 1));
     try {
-      onCaptured(await backend.capture(mode, { facing }));
+      const file = await backend.capture(mode, { facing });
+      window.setTimeout(() => haptic(), 90);
+      onCaptured(file);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Couldn’t take the photo.');
       setBusy(false);
     }
   };
 
-  // Penggaris EV: geser vertikal, tik per 1/3 EV.
-  const drag = useRef<{ y: number; ev: number } | null>(null);
+  // Dial EV: geser horizontal (kanan = lebih terang), tik per 1/3 EV.
+  const drag = useRef<{ x: number; ev: number } | null>(null);
   const onRulerDown = (e: ReactPointerEvent<HTMLElement>) => {
     e.currentTarget.setPointerCapture(e.pointerId);
-    drag.current = { y: e.clientY, ev };
+    drag.current = { x: e.clientX, ev };
   };
   const onRulerMove = (e: ReactPointerEvent<HTMLElement>) => {
     const d = drag.current;
     if (!d) return;
-    const next = Math.max(-EV_MAX, Math.min(EV_MAX, Math.round((d.ev + (d.y - e.clientY) / EV_PX * EV_STEP) / EV_STEP) * EV_STEP));
+    const next = Math.max(-EV_MAX, Math.min(EV_MAX, Math.round((d.ev + (e.clientX - d.x) / EV_PX * EV_STEP) / EV_STEP) * EV_STEP));
     if (Math.abs(next - ev) > 1e-6) { haptic(); setEv(next); }
   };
   const evText = `${ev > 0 ? '+' : ev < 0 ? '−' : ''}${Math.abs(ev).toFixed(1)}`;
   const ticks = Array.from({ length: 2 * EV_MAX / EV_STEP + 1 }, (_, i) => -EV_MAX + i * EV_STEP);
   const supported = backend.modes.includes(mode);
+  const box = FILM_BOX[film] ?? FILM_BOX.kodak_portra_400!;
 
   return (
     <motion.div
@@ -210,7 +218,12 @@ export function CameraScreen({ onClose, onCaptured, lastThumb, onOpenLast }: {
           </span>
         )}
         {error && <p className="cam-error" role="alert">{error}</p>}
-        {flash > 0 && <span key={flash} className="cam-flash" aria-hidden="true" />}
+        <span className="cam-curtain" data-closed={curtain || undefined} aria-hidden="true" />
+        <div className="cam-data">
+          <button type="button" aria-label={`White balance: ${WB[wb]!.name}. Tap to change.`} onClick={() => { haptic(); setWb((i) => (i + 1) % WB.length); }}>{WB[wb]!.code}</button>
+          <span>ISO AUTO</span>
+          <span>{ev === 0 ? '±' : ''}{evText} EV</span>
+        </div>
         <div className="cam-finder-bar">
           <span className="cam-chip-spacer" aria-hidden="true" />
           <div className="cam-lenses" role="radiogroup" aria-label="Lens">
@@ -231,54 +244,43 @@ export function CameraScreen({ onClose, onCaptured, lastThumb, onOpenLast }: {
       </div>
 
       <div className="cam-plate">
-        <button type="button" className="cam-last" aria-label="Last photo" disabled={!lastThumb} onClick={onOpenLast}>
-          {lastThumb && <img src={lastThumb} alt="" draggable={false} />}
-        </button>
-
-        <div className="cam-left">
-          <button type="button" className="cam-bracket-btn is-top" aria-label={`White balance: ${WB[wb]!.name}`} onClick={() => { haptic(); setWb((i) => (i + 1) % WB.length); }}>
-            <Bracket shape="tl" />
-            <b>{WB[wb]!.code}</b>
+        <div className="cam-row">
+          <button type="button" className="cam-film" aria-label={`Film: ${stockInfo(film).short}. Tap to change.`} onClick={() => { haptic(); setFilm(FILMS[(FILMS.indexOf(film) + 1) % FILMS.length]!); }}>
+            <span className="cam-window">
+              <span className="cam-film-box" style={{ background: box.bg, color: box.fg }}>
+                <small>{box.brand}</small>
+                <b>{box.speed}</b>
+                <small>{box.name}</small>
+              </span>
+            </span>
+            <span className="cam-caption">FILM</span>
           </button>
-          <button type="button" className="cam-bracket-btn is-bottom" aria-label={`Film: ${stockInfo(film).short}`} onClick={() => { haptic(); setFilm(FILMS[(FILMS.indexOf(film) + 1) % FILMS.length]!); }}>
-            <Bracket shape="bl" />
-            <b>{FILM_CODE[film] ?? 'FILM'}</b>
-          </button>
-        </div>
 
-        <div className="cam-center">
           <motion.button
             type="button"
             className="cam-shutter"
             aria-label="Take photo"
             disabled={!live || busy}
-            whileTap={{ scale: 0.92 }}
+            whileTap={{ scale: 0.94 }}
             onClick={() => void shoot()}
           >
             <span />
           </motion.button>
-          <div className="cam-look" role="radiogroup" aria-label="Viewfinder look">
-            <button type="button" role="radio" aria-checked={!lookOn} aria-label="Natural (no film look)" onClick={() => { haptic(); setLookOn(false); }}>
-              <Icon name="camera" size={16} />
-            </button>
-            <button type="button" role="radio" aria-checked={lookOn} aria-label={`Film look: ${stockInfo(film).short}`} onClick={() => { haptic(); setLookOn(true); }}>
-              F
-            </button>
+
+          <div className="cam-counter" aria-label={`${frames} exposures left on this roll`}>
+            <span className="cam-window is-counter">
+              <i aria-hidden="true" />
+              <motion.b key={frames} initial={{ y: -8, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ type: 'spring', duration: 0.35, bounce: 0.2 }}>
+                {String(frames).padStart(2, '0')}
+              </motion.b>
+              <small>EXP</small>
+            </span>
+            <span className="cam-caption">FRAMES</span>
           </div>
         </div>
 
-        <div className="cam-right" aria-label="Exposure mode: auto">
-          <Bracket shape="r" />
-          <b>A</b>
-        </div>
-
-        <div className="cam-readouts">
-          <span><small>EV</small><b>{evText}</b></span>
-          <span><small>SS</small><b>AUTO</b></span>
-        </div>
-
         <div
-          className="cam-ruler"
+          className="cam-dial"
           role="slider"
           tabIndex={0}
           aria-label="Exposure compensation"
@@ -292,13 +294,17 @@ export function CameraScreen({ onClose, onCaptured, lastThumb, onOpenLast }: {
           onPointerCancel={() => { drag.current = null; }}
           onDoubleClick={() => setEv(0)}
           onKeyDown={(e) => {
-            if (e.key === 'ArrowUp') setEv((v) => Math.min(EV_MAX, v + EV_STEP));
-            if (e.key === 'ArrowDown') setEv((v) => Math.max(-EV_MAX, v - EV_STEP));
+            if (e.key === 'ArrowRight') setEv((v) => Math.min(EV_MAX, v + EV_STEP));
+            if (e.key === 'ArrowLeft') setEv((v) => Math.max(-EV_MAX, v - EV_STEP));
           }}
         >
-          {ticks.map((t) => (
-            <i key={t} data-major={Math.abs(t - Math.round(t)) < 1e-6 || undefined} data-on={Math.abs(t - ev) < 1e-6 || undefined} />
-          )).reverse()}
+          <span className="cam-dial-label">EV <b>{evText}</b></span>
+          <span className="cam-dial-ticks" aria-hidden="true">
+            {ticks.map((t) => (
+              <i key={t} data-major={Math.abs(t - Math.round(t)) < 1e-6 || undefined} data-on={Math.abs(t - ev) < 1e-6 || undefined} />
+            ))}
+          </span>
+          <span className="cam-dial-numbers" aria-hidden="true"><span>−2</span><span>−1</span><span>0</span><span>+1</span><span>+2</span></span>
         </div>
       </div>
     </motion.div>

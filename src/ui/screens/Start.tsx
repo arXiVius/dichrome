@@ -240,8 +240,6 @@ export function DropZone({ onChoose: choose, engineFailed }: { onChoose: () => v
             key="camera"
             onClose={() => setCameraOpen(false)}
             onCaptured={(file) => { setCameraOpen(false); projects.requestRelink(undefined); void projects.openFile(file); }}
-            lastThumb={proj.list[0]?.thumb}
-            onOpenLast={proj.list[0] ? () => { const c = proj.list[0]!; setCameraOpen(false); openProject(c); } : undefined}
           />
         )}
       </AnimatePresence>

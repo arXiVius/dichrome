@@ -1973,8 +1973,16 @@ html[data-flight="close"] .bento-tile[data-flying] { visibility: hidden; }
 .cam-focus i { width: 1.5px; height: 26px; border-radius: 1px; background: rgba(255, 255, 255, 0.8); }
 .cam-focus > span { display: flex; transition: transform 0.15s ease; }
 .cam-error { position: absolute; inset: 0; margin: 0; display: flex; align-items: center; justify-content: center; padding: 32px; text-align: center; font-size: 15px; color: rgba(235, 235, 245, 0.7); }
-.cam-flash { position: absolute; inset: 0; background: #fff; pointer-events: none; animation: cam-flash 0.28s ease-out forwards; }
-@keyframes cam-flash { from { opacity: 0.85; } to { opacity: 0; } }
+/* Tirai shutter: menggelap sesaat saat jepret. */
+.cam-curtain { position: absolute; inset: 0; background: #000; pointer-events: none; opacity: 0; transition: opacity 0.14s ease; }
+.cam-curtain[data-closed] { opacity: 0.92; transition-duration: 0.05s; }
+/* Data kecil di jendela bidik (seperti data di jendela bidik rangefinder). */
+.cam-data {
+  position: absolute; left: 16px; top: 12px; display: flex; align-items: center; gap: 14px;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 11px; letter-spacing: 0.08em; color: rgba(255, 255, 255, 0.88);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+.cam-data button { border: 0; background: none; color: inherit; font: inherit; padding: 8px 0; cursor: pointer; }
 .cam-finder-bar { position: absolute; left: 12px; right: 12px; bottom: 12px; display: flex; align-items: center; justify-content: space-between; }
 .cam-chip-spacer { width: 44px; }
 .cam-lenses { display: flex; align-items: center; gap: 4px; }
@@ -1986,66 +1994,47 @@ html[data-flight="close"] .bento-tile[data-flying] { visibility: hidden; }
 }
 .cam-lens[aria-checked="true"] { color: #0a84ff; }
 .cam-flip { background: rgba(0, 0, 0, 0.32); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); }
-.cam-plate {
-  /* Simetris terhadap tombol jepret: braket kiri/kanan sama lebar dan sama jauh; foto terakhir dan
-     EV/SS di tengah kolom luar masing-masing; penggaris EV di tepi kanan, di luar grid. */
-  position: relative; flex: 1 0 186px; display: grid; align-items: center; justify-items: center;
-  grid-template-columns: minmax(0, 1fr) 46px 80px 46px minmax(0, 1fr); column-gap: 14px;
-  padding: 0 22px; box-sizing: border-box;
+/* Pelat rangefinder: jendela film | tombol jepret | penghitung frame, dial EV di bawahnya. */
+.cam-plate { flex: 1 0 196px; display: flex; flex-direction: column; justify-content: center; gap: 26px; padding: 0 24px; box-sizing: border-box; }
+.cam-row { display: grid; grid-template-columns: minmax(0, 1fr) 92px minmax(0, 1fr); align-items: center; justify-items: center; }
+.cam-film, .cam-counter {
+  display: flex; flex-direction: column; align-items: center; gap: 7px; border: 0; background: none; padding: 0; color: #fff; font: inherit;
 }
-.cam-last {
-  width: 32px; height: 60px; flex-shrink: 0; padding: 0; border: 2.5px solid #000; border-radius: 999px; overflow: hidden; cursor: pointer;
-  background: #1c1c1e; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.14); box-sizing: border-box;
+.cam-film { cursor: pointer; }
+.cam-film:active .cam-window { transform: scale(0.96); }
+.cam-window {
+  width: 64px; height: 84px; border-radius: 12px; background: #0b0b0c; box-sizing: border-box; display: flex; transition: transform 0.15s ease;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12), inset 0 2px 8px rgba(0, 0, 0, 0.85);
 }
-.cam-last img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.cam-left { position: relative; width: 100%; height: 132px; }
-.cam-bracket-btn {
-  position: absolute; left: 0; width: 100%; height: 52px; border: 0; background: none; padding: 0; color: #d8d8da; cursor: pointer;
-  font: inherit; font-size: 13px; font-weight: 500; letter-spacing: 0.04em; text-align: left;
+.cam-film .cam-window { padding: 6px; }
+.cam-film-box {
+  flex: 1; border-radius: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  transition: background-color 0.25s ease, color 0.25s ease;
 }
-.cam-bracket-btn.is-top { top: 0; }
-.cam-bracket-btn.is-bottom { bottom: 0; }
-.cam-bracket-btn b { position: absolute; left: 16%; font-weight: 500; white-space: nowrap; }
-.cam-bracket-btn.is-top b { top: 16px; }
-.cam-bracket-btn.is-bottom b { bottom: 15px; }
-/* Braket: garis tipis bergradien hanya di sisi yang ada (mask membuang isi kotak). */
-.cam-br {
-  position: absolute; inset: 0; pointer-events: none; border: 1.5px solid transparent; background: var(--br) border-box;
-  -webkit-mask: linear-gradient(#000 0 0) padding-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor;
-  mask: linear-gradient(#000 0 0) padding-box exclude, linear-gradient(#000 0 0);
-}
-.cam-br.is-tl { border-right: 0; border-bottom: 0; border-top-left-radius: 18px; --br: linear-gradient(45deg, #3a5bff, #e2a6ff); }
-.cam-br.is-bl { border-right: 0; border-top: 0; border-bottom-left-radius: 18px; --br: linear-gradient(135deg, #ffd23f, #ff5a2b); }
-.cam-br.is-r {
-  border-left: 0; border-radius: 0 18px 18px 0;
-  --br: linear-gradient(to bottom, #c9773a 0%, #ff4f2b 42%, #b07a45 58%, #8f6a3f 100%);
-}
-/* Tombol jepret sejajar tepi atas braket, saklar look sejajar tepi bawahnya. */
-.cam-center { width: 100%; height: 132px; display: flex; flex-direction: column; align-items: center; justify-content: space-between; }
+.cam-film-box small { font-size: 7.5px; font-weight: 700; letter-spacing: 0.16em; opacity: 0.9; white-space: nowrap; }
+.cam-film-box b { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; line-height: 1; }
+.cam-window.is-counter { flex-direction: column; align-items: center; justify-content: center; gap: 2px; overflow: hidden; }
+.cam-window.is-counter i { width: 0; height: 0; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid #0a84ff; }
+.cam-window.is-counter b { display: block; font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 30px; font-weight: 500; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.cam-window.is-counter small { font-size: 8px; letter-spacing: 0.18em; color: rgba(235, 235, 245, 0.5); }
+.cam-caption { font-size: 10px; letter-spacing: 0.16em; color: rgba(235, 235, 245, 0.55); }
 .cam-shutter {
   /* Ukuran tetap (bukan aspect-ratio di kolom flex): Safari iOS sempat memipihkannya jadi elips. */
-  flex: 0 0 auto; width: 80px; height: 80px; padding: 7px; border: 0; border-radius: 50%; background: #000; cursor: pointer; box-sizing: border-box;
-  -webkit-appearance: none; appearance: none;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.07), 0 10px 24px rgba(0, 0, 0, 0.7);
+  flex: 0 0 auto; width: 88px; height: 88px; padding: 0; border: 0; border-radius: 50%; background: #000; cursor: pointer;
+  -webkit-appearance: none; appearance: none; display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 0 0 1.5px #3a3a3c, 0 0 0 5px #000, 0 0 0 6px rgba(255, 255, 255, 0.08), 0 12px 28px rgba(0, 0, 0, 0.8);
 }
-.cam-shutter span { display: block; width: 66px; height: 66px; border-radius: 50%; background: #cfd5d2; }
-.cam-look { display: flex; padding: 2px; border-radius: 16px; background: #1f1f21; }
-.cam-look button {
-  width: 38px; height: 28px; border: 0; border-radius: 14px; background: none; color: rgba(255, 255, 255, 0.6); cursor: pointer;
-  display: flex; align-items: center; justify-content: center; font: inherit; font-size: 14px; font-weight: 750;
+.cam-shutter span {
+  display: block; width: 66px; height: 66px; border-radius: 50%; background: #e4e6e3;
+  box-shadow: inset 0 -4px 10px rgba(0, 0, 0, 0.18), inset 0 2px 3px rgba(255, 255, 255, 0.7);
 }
-.cam-look button[aria-checked="true"] { background: #0a84ff; color: #fff; }
-.cam-right { position: relative; width: 100%; height: 132px; display: flex; align-items: center; justify-content: center; }
-.cam-right b { font-size: 14px; font-weight: 500; color: #d8d8da; padding-right: 2px; }
-.cam-readouts { width: 100%; max-width: 54px; display: flex; flex-direction: column; gap: 14px; }
-.cam-readouts span { display: flex; flex-direction: column; }
-.cam-readouts small { font-size: 11px; color: rgba(235, 235, 245, 0.62); padding-bottom: 1px; border-bottom: 1px solid rgba(255, 255, 255, 0.3); }
-.cam-readouts b { font-size: 17px; font-weight: 400; font-variant-numeric: tabular-nums; padding-top: 1px; color: #ececee; white-space: nowrap; }
-.cam-ruler {
-  position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 14px; height: 132px; display: flex; flex-direction: column; justify-content: space-between; align-items: flex-end; gap: 0;
-  touch-action: none; cursor: ns-resize; outline: none;
-}
-.cam-ruler i { display: block; width: 7px; height: 1.5px; background: rgba(255, 255, 255, 0.24); }
-.cam-ruler i[data-major] { width: 10px; background: rgba(255, 255, 255, 0.6); }
-.cam-ruler i[data-on] { width: 12px; height: 2px; background: #ff4f2b; }
-.cam-ruler:focus-visible i[data-on] { box-shadow: 0 0 0 2px rgba(10, 132, 255, 0.6); }
+.cam-dial { position: relative; align-self: center; width: min(280px, 100%); padding-top: 20px; touch-action: none; cursor: ew-resize; outline: none; }
+.cam-dial-label { position: absolute; left: 0; right: 0; top: 0; text-align: center; font-size: 11px; letter-spacing: 0.14em; color: rgba(235, 235, 245, 0.7); }
+.cam-dial-label b { color: #fff; font-weight: 500; font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
+.cam-dial-ticks { display: flex; justify-content: space-between; align-items: flex-end; height: 18px; }
+.cam-dial-ticks i { display: block; width: 2px; height: 7px; border-radius: 1px; background: rgba(255, 255, 255, 0.25); transition: height 0.12s ease, background-color 0.12s ease; }
+.cam-dial-ticks i[data-major] { height: 12px; background: rgba(255, 255, 255, 0.6); }
+.cam-dial-ticks i[data-on] { height: 18px; background: #0a84ff; }
+.cam-dial:focus-visible .cam-dial-ticks i[data-on] { box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.35); }
+.cam-dial-numbers { display: flex; justify-content: space-between; margin-top: 6px; font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 10px; color: rgba(235, 235, 245, 0.55); }
+.cam-dial-numbers span { width: 2px; display: flex; justify-content: center; }
