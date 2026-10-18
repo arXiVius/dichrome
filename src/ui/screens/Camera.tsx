@@ -47,6 +47,8 @@ const EV_STEP = 1 / 3;
 const EV_MAX = 2;
 /** Jarak geser horizontal (px) per 1/3 EV di dial. */
 const EV_PX = 14;
+/** Jarak geser vertikal (px) per 1/3 EV di jendela bidik (seperti matahari exposure iPhone). */
+const EV_FINDER_PX = 12;
 
 const store = {
   get<T extends string>(key: string, fallback: T, allowed: readonly string[]): T {
@@ -141,6 +143,41 @@ export function CameraScreen({ onClose, onCaptured }: {
     }
   };
 
+  // Jendela bidik: ketuk = titik fokus/exposure; geser naik-turun (dari mana saja) = EV,
+  // seperti matahari exposure di kamera iPhone. Tik haptic per 1/3 EV.
+  const finderDrag = useRef<{ x: number; y: number; ev: number; moved: boolean } | null>(null);
+  const [adjusting, setAdjusting] = useState(false);
+  const pointIn = (e: ReactPointerEvent<HTMLElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    return { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height };
+  };
+  const onFinderDown = (e: ReactPointerEvent<HTMLElement>) => {
+    if ((e.target as HTMLElement).closest('button')) return;
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* pointer sudah lepas */ }
+    finderDrag.current = { x: e.clientX, y: e.clientY, ev, moved: false };
+  };
+  const onFinderMove = (e: ReactPointerEvent<HTMLElement>) => {
+    const d = finderDrag.current;
+    if (!d) return;
+    const dy = d.y - e.clientY;
+    if (!d.moved) {
+      if (Math.abs(dy) < 8) return;
+      d.moved = true;
+      setAdjusting(true);
+      // Belum ada titik: exposure diukur dari tempat jari mulai menggeser.
+      if (!focus) { const r = e.currentTarget.getBoundingClientRect(); setFocus({ x: (d.x - r.left) / r.width, y: (d.y - r.top) / r.height }); }
+    }
+    const next = Math.max(-EV_MAX, Math.min(EV_MAX, Math.round((d.ev + dy / EV_FINDER_PX * EV_STEP) / EV_STEP) * EV_STEP));
+    if (Math.abs(next - ev) > 1e-6) { haptic(); setEv(next); }
+  };
+  const onFinderUp = (e: ReactPointerEvent<HTMLElement>) => {
+    const d = finderDrag.current;
+    finderDrag.current = null;
+    setAdjusting(false);
+    // Ketukan biasa: titik fokus baru, exposure kembali ke 0 seperti iPhone.
+    if (d && !d.moved) { setFocus(pointIn(e)); if (ev !== 0) setEv(0); haptic(); }
+  };
+
   // Dial EV: geser horizontal (kanan = lebih terang), tik per 1/3 EV.
   const drag = useRef<{ x: number; ev: number } | null>(null);
   const onRulerDown = (e: ReactPointerEvent<HTMLElement>) => {
@@ -192,11 +229,10 @@ export function CameraScreen({ onClose, onCaptured }: {
 
       <div
         className="cam-finder"
-        onPointerDown={(e) => {
-          if ((e.target as HTMLElement).closest('button')) return;
-          const r = e.currentTarget.getBoundingClientRect();
-          setFocus({ x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height });
-        }}
+        onPointerDown={onFinderDown}
+        onPointerMove={onFinderMove}
+        onPointerUp={onFinderUp}
+        onPointerCancel={() => { finderDrag.current = null; setAdjusting(false); }}
       >
         <video ref={video} className="cam-video" playsInline muted aria-hidden="true" />
         <canvas
@@ -211,10 +247,11 @@ export function CameraScreen({ onClose, onCaptured }: {
           <div className="cam-grid" aria-hidden="true"><i /><i /><i /><i /></div>
         )}
         {focus && (
-          <span className="cam-focus" aria-hidden="true" style={{ left: `${focus.x * 100}%`, top: `${focus.y * 100}%` }}>
+          <span className="cam-focus" data-adjusting={adjusting || undefined} aria-hidden="true" style={{ left: `${focus.x * 100}%`, top: `${focus.y * 100}%` }}>
             <i />
             <span style={{ transform: `translateY(${-ev * 9}px)` }}><Icon name="exposure" size={18} strokeWidth={1.8} /></span>
             <i />
+            <b className="cam-focus-ev">{evText}</b>
           </span>
         )}
         {error && <p className="cam-error" role="alert">{error}</p>}

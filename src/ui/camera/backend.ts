@@ -65,13 +65,36 @@ export interface CameraBackend {
   lenses(): Promise<Lens[]>;
   start(video: HTMLVideoElement, lens: Lens): Promise<void>;
   stop(): void;
-  /** Jepret frame penuh lensa yang aktif. */
-  capture(mode: CaptureMode, opts: { facing: Facing }): Promise<File>;
+  /** Jepret frame penuh lensa yang aktif, dengan kompensasi exposure (EV) dan white balance. */
+  capture(mode: CaptureMode, opts: CaptureOptions): Promise<File>;
 }
 
 function stamp(d = new Date()): string {
   const p = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+}
+
+export interface CaptureOptions {
+  facing: Facing;
+  /** Kompensasi exposure (EV), 0 = apa adanya. */
+  ev?: number;
+  /** Penguat white balance R, G, B (1 = netral). */
+  wb?: readonly [number, number, number];
+}
+
+/**
+ * Tabel per kanal untuk EV dan white balance: dihitung di cahaya linear
+ * (perkiraan gamma 2,2), sama dengan jendela bidik (LiveLook), jadi hasil
+ * jepretan seterang yang terlihat. `undefined` bila netral.
+ */
+export function exposureTables(ev = 0, wb: readonly [number, number, number] = [1, 1, 1]): [Uint8Array, Uint8Array, Uint8Array] | undefined {
+  if (Math.abs(ev) < 1e-6 && wb.every((g) => Math.abs(g - 1) < 1e-6)) return undefined;
+  const gain = 2 ** ev;
+  return wb.map((g) => {
+    const t = new Uint8Array(256);
+    for (let i = 0; i < 256; i++) t[i] = Math.round(255 * Math.min(1, ((i / 255) ** 2.2) * gain * g) ** (1 / 2.2));
+    return t;
+  }) as [Uint8Array, Uint8Array, Uint8Array];
 }
 
 export class CameraUnavailableError extends Error {
@@ -122,7 +145,7 @@ export class WebCamera implements CameraBackend {
     if (this.#video) this.#video.srcObject = null;
   }
 
-  async capture(_mode: CaptureMode, { facing }: { facing: Facing }): Promise<File> {
+  async capture(_mode: CaptureMode, { facing, ev, wb }: CaptureOptions): Promise<File> {
     const video = this.#video;
     if (!video || !video.videoWidth) throw new CameraUnavailableError('The camera isn’t ready yet.');
     const w = video.videoWidth, h = video.videoHeight;
@@ -134,6 +157,14 @@ export class WebCamera implements CameraBackend {
     // Kamera depan: simpan seperti yang terlihat di jendela bidik (cermin).
     if (facing === 'front') { ctx.translate(w, 0); ctx.scale(-1, 1); }
     ctx.drawImage(video, 0, 0, w, h);
+    const tables = exposureTables(ev, wb);
+    if (tables) {
+      const image = ctx.getImageData(0, 0, w, h);
+      const d = image.data, [tr, tg, tb] = tables;
+      for (let i = 0; i < d.length; i += 4) { d[i] = tr[d[i]!]!; d[i + 1] = tg[d[i + 1]!]!; d[i + 2] = tb[d[i + 2]!]!; }
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.putImageData(image, 0, 0);
+    }
     const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.95));
     if (!blob) throw new CameraUnavailableError('Couldn’t take the photo.');
     return new File([blob], `gamma_${stamp()}.jpg`, { type: 'image/jpeg', lastModified: Date.now() });

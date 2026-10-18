@@ -1952,7 +1952,7 @@ html[data-flight="close"] .bento-tile[data-flying] { visibility: hidden; }
   /* Jendela bidik 3:4 seperti kamera iPhone; sisanya untuk pelat kontrol (tidak berdesakan di bawah). */
   position: relative; flex: 0 0 auto; margin: 2px 10px 0; border-radius: 30px; overflow: hidden;
   height: min(calc((100vw - 20px) * 4 / 3), calc(100dvh - var(--safe-top, 0px) - var(--safe-bottom, 0px) - 52px - 196px));
-  background: #111; touch-action: manipulation;
+  background: #111; touch-action: none;
 }
 .cam-video { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .cam-canvas {
@@ -1972,6 +1972,12 @@ html[data-flight="close"] .bento-tile[data-flying] { visibility: hidden; }
 }
 .cam-focus i { width: 1.5px; height: 26px; border-radius: 1px; background: rgba(255, 255, 255, 0.8); }
 .cam-focus > span { display: flex; transition: transform 0.15s ease; }
+.cam-focus-ev {
+  position: absolute; left: calc(100% + 10px); top: 50%; translate: 0 -50%; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums;
+  white-space: nowrap; opacity: 0; transition: opacity 0.2s ease;
+}
+.cam-focus[data-adjusting] .cam-focus-ev { opacity: 1; }
+.cam-focus[data-adjusting] > span { color: #0a84ff; }
 .cam-error { position: absolute; inset: 0; margin: 0; display: flex; align-items: center; justify-content: center; padding: 32px; text-align: center; font-size: 15px; color: rgba(235, 235, 245, 0.7); }
 /* Tirai shutter: menggelap sesaat saat jepret. */
 .cam-curtain { position: absolute; inset: 0; background: #000; pointer-events: none; opacity: 0; transition: opacity 0.14s ease; }
