@@ -133,6 +133,15 @@ function isDeviceLoss(error: Error): boolean {
 const HISTORY_GAP_MS = 600;
 const HISTORY_LIMIT = 100;
 
+/** Satu langkah riwayat Undo: resep dan crop & rotate saat itu. */
+export interface HistoryEntry { params: RenderParams; crop?: Crop }
+
+function sameCrop(a: Crop | undefined, b: Crop | undefined): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return (Object.keys(a) as Array<keyof Crop>).every((k) => a[k] === b[k]);
+}
+
 /** Pinggiran konteks Refine Edge di sekitar sapuan (bagian sisi pendek foto). */
 const REFINE_CONTEXT = 0.06;
 
@@ -310,8 +319,8 @@ export class Engine {
     retouches: 0,
   };
   readonly #listeners = new Set<Listener>();
-  #past: RenderParams[] = [];
-  #future: RenderParams[] = [];
+  #past: HistoryEntry[] = [];
+  #future: HistoryEntry[] = [];
   #lastEditAt = 0;
   #client: SessionClient | undefined;
   #ready: Promise<void> | undefined;
@@ -750,17 +759,32 @@ export class Engine {
     return { canUndo: this.#past.length > 0, canRedo: this.#future.length > 0 };
   }
 
+  #snapshot(): HistoryEntry {
+    return { params: this.#state.params, crop: this.#state.crop };
+  }
+
+  /** Pasang langkah riwayat: resep dan crop-nya (tanpa menambah langkah). */
+  #restoreStep(entry: HistoryEntry): void {
+    this.#lastEditAt = 0;
+    this.setParams(diffParams(this.#state.params, entry.params), false);
+    if (entry.crop !== this.#state.crop) this.#set({ crop: entry.crop });
+    this.#set({ history: this.#historyState() });
+  }
+
   undo(): void {
     const target = this.#past.pop();
     if (!target) return;
-    this.#future.push(this.#state.params);
-    this.#lastEditAt = 0;
-    this.setParams(diffParams(this.#state.params, target), false);
+    this.#future.push(this.#snapshot());
+    this.#restoreStep(target);
   }
 
-  /** Resep sebelumnya, terlama di depan (riwayat Undo; resep sekarang = `params`). */
-  get historyPast(): readonly RenderParams[] {
+  /** Langkah sebelumnya, terlama di depan (riwayat Undo; sekarang = `historyNow`). */
+  get historyPast(): readonly HistoryEntry[] {
     return this.#past;
+  }
+
+  get historyNow(): HistoryEntry {
+    return this.#snapshot();
   }
 
   /**
@@ -772,18 +796,15 @@ export class Engine {
     if (!target) return;
     const skipped = this.#past.splice(index);
     skipped.shift();
-    this.#future.push(this.#state.params, ...skipped.reverse());
-    this.#lastEditAt = 0;
-    this.setParams(diffParams(this.#state.params, target), false);
-    this.#set({ history: this.#historyState() });
+    this.#future.push(this.#snapshot(), ...skipped.reverse());
+    this.#restoreStep(target);
   }
 
   redo(): void {
     const target = this.#future.pop();
     if (!target) return;
-    this.#past.push(this.#state.params);
-    this.#lastEditAt = 0;
-    this.setParams(diffParams(this.#state.params, target), false);
+    this.#past.push(this.#snapshot());
+    this.#restoreStep(target);
   }
 
   dismissError(): void {
@@ -823,7 +844,7 @@ export class Engine {
     if (record && changed) {
       const now = performance.now();
       if (this.#past.length === 0 || this.#future.length > 0 || now - this.#lastEditAt > HISTORY_GAP_MS) {
-        this.#past.push(previous);
+        this.#past.push({ params: previous, crop: this.#state.crop });
         if (this.#past.length > HISTORY_LIMIT) this.#past.shift();
       }
       this.#future = [];
@@ -1130,8 +1151,13 @@ export class Engine {
 
   /** Crop & rotate baru untuk foto terbuka (`undefined` = utuh). */
   setCrop(crop: Crop | undefined): void {
-    if (this.#state.phase !== 'editing') return;
-    this.#set({ crop });
+    if (this.#state.phase !== 'editing' || sameCrop(crop, this.#state.crop)) return;
+    // Satu langkah Undo per Done di editor crop.
+    this.#past.push(this.#snapshot());
+    if (this.#past.length > HISTORY_LIMIT) this.#past.shift();
+    this.#future = [];
+    this.#lastEditAt = 0;
+    this.#set({ crop, history: this.#historyState() });
   }
 
   /** Lembar Ekspor ditutup: worker melepas render penuh dan scratch GPU-nya. */

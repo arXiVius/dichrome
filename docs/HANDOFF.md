@@ -115,7 +115,8 @@ CSS (`CropLayer` di PhotoView; koordinat fokus/pipet/kuas dipetakan lewat
 disimpan di proyek (`ProjectRecord.crop`) dan thumbnail ikut terpotong.
 Editor: `screens/CropEditor.tsx` (tombol crop di bar atas HP, toolbar layar
 lebar, menu More, tombol C). Layar penuh dimatikan untuk foto ber-crop.
-Belum: crop tidak masuk riwayat Undo (Cancel/Reset di editornya).
+Crop ikut riwayat Undo: tiap Done di editor crop = satu langkah ("Crop  4:5 · 2.4°"),
+langkah riwayat = `HistoryEntry` (resep + crop) di `engine.ts`.
 
 Catatan: gambar kartu carousel (kombinasi tanpa look) diambil dari frame pratinjau; frame yang
 tampil saat resep berganti ditandai basi (`params` berubah seketika,

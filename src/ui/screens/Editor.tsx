@@ -49,7 +49,7 @@ import type { Frame } from '../engine/display';
 import { CropEditor } from './CropEditor';
 import { useLookPreview } from '../components/LookLayer';
 import { hasLook, lookFor } from '../engine/looks';
-import { describeChange } from '../model/history';
+import { describeStep } from '../model/history';
 import { haptic } from '../haptics';
 import { projects } from '../projects/projects';
 import { RemoveContent } from './Remove';
@@ -610,7 +610,7 @@ function UndoButton({ state, className, size = 20 }: { state: EngineState; class
   const past = anchor ? engine.historyPast : [];
   const actions: SheetAction[] = [];
   for (let i = past.length - 1; i >= 0 && actions.length < HISTORY_ROWS; i--) {
-    const { label, value } = describeChange(past[i]!, past[i + 1] ?? state.params);
+    const { label, value } = describeStep(past[i]!, past[i + 1] ?? engine.historyNow);
     const index = i;
     actions.push({ label, shortcut: value, icon: 'undo', onSelect: () => { setAnchor(null); engine.undoTo(index); } });
   }
