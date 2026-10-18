@@ -1987,51 +1987,61 @@ html[data-flight="close"] .bento-tile[data-flying] { visibility: hidden; }
 .cam-zoom small { font-size: 12px; margin-left: 1px; }
 .cam-flip { background: rgba(0, 0, 0, 0.32); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); }
 .cam-plate {
-  flex-shrink: 0; height: 172px; margin: 0 8px; border-radius: 34px; background: #111113;
-  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.08);
-  display: grid; grid-template-columns: 36px 58px minmax(84px, 1fr) 40px 58px 14px; column-gap: 6px; align-items: center;
-  padding: 14px 0 14px 12px; box-sizing: border-box;
+  /* Tanpa latar: elemen langsung di atas hitam, proporsi seperti pelat Moment. */
+  flex-shrink: 0; height: 150px; margin: 0 8px;
+  display: grid; grid-template-columns: 32px 54px minmax(80px, 1fr) 50px 56px 12px; column-gap: 8px; align-items: center;
+  padding: 0 0 0 10px; box-sizing: border-box;
 }
 .cam-last {
-  width: 36px; height: 62px; padding: 0; border: 2px solid #000; border-radius: 18px; overflow: hidden; cursor: pointer;
-  background: #1c1c1e; box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.16);
+  width: 32px; height: 60px; padding: 0; border: 2.5px solid #000; border-radius: 16px; overflow: hidden; cursor: pointer;
+  background: #1c1c1e; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.14);
 }
 .cam-last img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.cam-left { display: grid; grid-template-rows: 1fr 1fr; row-gap: 16px; height: 100%; }
+.cam-left { position: relative; height: 118px; }
 .cam-bracket-btn {
-  position: relative; border: 0; background: none; padding: 0 0 0 13px; color: #e8e8ea; cursor: pointer;
-  display: flex; align-items: center; font: inherit; font-size: 15px; font-weight: 600; letter-spacing: 0.04em;
+  position: absolute; left: 0; width: 54px; height: 46px; border: 0; background: none; padding: 0; color: #d8d8da; cursor: pointer;
+  font: inherit; font-size: 14px; font-weight: 500; letter-spacing: 0.04em; text-align: left;
 }
-.cam-bracket-btn.is-top { align-items: flex-start; padding-top: 12px; }
-.cam-bracket-btn.is-bottom { align-items: flex-end; padding-bottom: 12px; }
-.cam-bracket { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
-.cam-center { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.cam-bracket-btn.is-top { top: 0; }
+.cam-bracket-btn.is-bottom { bottom: 0; }
+.cam-bracket-btn b { position: absolute; left: 13px; font-weight: 500; white-space: nowrap; }
+.cam-bracket-btn.is-top b { top: 14px; }
+.cam-bracket-btn.is-bottom b { bottom: 12px; }
+/* Braket: garis tipis bergradien hanya di sisi yang ada (mask membuang isi kotak). */
+.cam-br {
+  position: absolute; inset: 0; pointer-events: none; border: 1.5px solid transparent; background: var(--br) border-box;
+  -webkit-mask: linear-gradient(#000 0 0) padding-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) padding-box exclude, linear-gradient(#000 0 0);
+}
+.cam-br.is-tl { border-right: 0; border-bottom: 0; border-top-left-radius: 18px; --br: linear-gradient(45deg, #3a5bff, #e2a6ff); }
+.cam-br.is-bl { border-right: 0; border-top: 0; border-bottom-left-radius: 18px; --br: linear-gradient(135deg, #ffd23f, #ff5a2b); }
+.cam-br.is-r {
+  border-left: 0; border-radius: 0 18px 18px 0;
+  --br: linear-gradient(to bottom, #c9773a 0%, #ff4f2b 42%, #b07a45 58%, #8f6a3f 100%);
+}
+.cam-center { display: flex; flex-direction: column; align-items: center; gap: 12px; }
 .cam-shutter {
-  width: 80px; height: 80px; padding: 7px; border: 0; border-radius: 50%; background: #050506; cursor: pointer;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06), 0 8px 22px rgba(0, 0, 0, 0.6);
+  width: 78px; height: 78px; padding: 7px; border: 0; border-radius: 50%; background: #000; cursor: pointer;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.07), 0 10px 24px rgba(0, 0, 0, 0.7);
 }
-.cam-shutter span { display: block; width: 100%; height: 100%; border-radius: 50%; background: #d3d9d6; box-shadow: inset 0 -6px 14px rgba(0, 0, 0, 0.12); }
-.cam-shutter:disabled span { opacity: 0.55; }
-.cam-look { display: flex; padding: 2px; border-radius: 16px; background: #1f1f21; }
+.cam-shutter span { display: block; width: 100%; height: 100%; border-radius: 50%; background: #cfd5d2; }
+.cam-look { display: flex; padding: 2px; border-radius: 15px; background: #1f1f21; }
 .cam-look button {
   width: 38px; height: 26px; border: 0; border-radius: 13px; background: none; color: rgba(255, 255, 255, 0.6); cursor: pointer;
   display: flex; align-items: center; justify-content: center; font: inherit; font-size: 15px; font-weight: 750;
 }
 .cam-look button[aria-checked="true"] { background: #0a84ff; color: #fff; }
-.cam-right { position: relative; height: 100%; display: flex; align-items: center; justify-content: center; }
-.cam-right .cam-bracket { height: 50%; }
-.cam-right .cam-bracket.is-tr { top: 0; bottom: auto; }
-.cam-right .cam-bracket.is-br { top: auto; bottom: 0; }
-.cam-right b { font-size: 17px; font-weight: 600; color: #e8e8ea; padding-right: 6px; }
-.cam-readouts { display: flex; flex-direction: column; gap: 14px; }
+.cam-right { position: relative; height: 118px; display: flex; align-items: center; justify-content: center; }
+.cam-right b { font-size: 14px; font-weight: 500; color: #d8d8da; padding-right: 4px; }
+.cam-readouts { display: flex; flex-direction: column; gap: 12px; }
 .cam-readouts span { display: flex; flex-direction: column; }
-.cam-readouts small { font-size: 11px; color: rgba(235, 235, 245, 0.6); padding-bottom: 2px; border-bottom: 1px solid rgba(255, 255, 255, 0.28); }
-.cam-readouts b { font-size: 20px; font-weight: 500; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; padding-top: 2px; }
+.cam-readouts small { font-size: 10px; color: rgba(235, 235, 245, 0.62); padding-bottom: 1px; border-bottom: 1px solid rgba(255, 255, 255, 0.3); }
+.cam-readouts b { font-size: 17px; font-weight: 400; letter-spacing: 0; font-variant-numeric: tabular-nums; padding-top: 1px; color: #ececee; }
 .cam-ruler {
-  height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: flex-end; gap: 4px;
+  height: 118px; display: flex; flex-direction: column; justify-content: center; align-items: flex-end; gap: 4px;
   touch-action: none; cursor: ns-resize; outline: none;
 }
-.cam-ruler i { display: block; width: 8px; height: 2px; border-radius: 1px; background: rgba(255, 255, 255, 0.22); }
-.cam-ruler i[data-major] { width: 12px; background: rgba(255, 255, 255, 0.55); }
-.cam-ruler i[data-on] { width: 14px; background: #ff6a2b; }
+.cam-ruler i { display: block; width: 7px; height: 1.5px; background: rgba(255, 255, 255, 0.24); }
+.cam-ruler i[data-major] { width: 10px; background: rgba(255, 255, 255, 0.6); }
+.cam-ruler i[data-on] { width: 12px; height: 2px; background: #ff4f2b; }
 .cam-ruler:focus-visible i[data-on] { box-shadow: 0 0 0 2px rgba(10, 132, 255, 0.6); }

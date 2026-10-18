@@ -47,22 +47,9 @@ const store = {
   },
 };
 
-/** Braket sudut bergradien (gaya pelat kamera). */
-function Bracket({ corner, from, to }: { corner: 'tl' | 'bl' | 'tr' | 'br'; from: string; to: string }) {
-  const id = `cam-br-${corner}-${from.slice(1)}`;
-  // Sudut di (0,0) pada kotak 100x100, lalu dicerminkan per sudut.
-  const flip = { tl: '', bl: 'scale(1,-1) translate(0,-100)', tr: 'scale(-1,1) translate(-100,0)', br: 'scale(-1,-1) translate(-100,-100)' }[corner];
-  return (
-    <svg className={`cam-bracket is-${corner}`} viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-      <defs>
-        <linearGradient id={id} x1="1" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor={from} />
-          <stop offset="1" stopColor={to} />
-        </linearGradient>
-      </defs>
-      <path d="M 100 1.5 H 34 A 32.5 32.5 0 0 0 1.5 34 V 100" fill="none" stroke={`url(#${id})`} strokeWidth="3" vectorEffect="non-scaling-stroke" transform={flip} />
-    </svg>
-  );
+/** Braket tipis bergradien (gaya pelat kamera Moment); warna di styles.css. */
+function Bracket({ shape }: { shape: 'tl' | 'bl' | 'r' }) {
+  return <span className={`cam-br is-${shape}`} aria-hidden="true" />;
 }
 
 export function CameraScreen({ onClose, onCaptured, lastThumb, onOpenLast }: {
@@ -236,11 +223,11 @@ export function CameraScreen({ onClose, onCaptured, lastThumb, onOpenLast }: {
 
         <div className="cam-left">
           <button type="button" className="cam-bracket-btn is-top" aria-label={`White balance: ${WB[wb]!.name}`} onClick={() => { haptic(); setWb((i) => (i + 1) % WB.length); }}>
-            <Bracket corner="tl" from="#5b6cff" to="#c79bff" />
+            <Bracket shape="tl" />
             <b>{WB[wb]!.code}</b>
           </button>
           <button type="button" className="cam-bracket-btn is-bottom" aria-label={`Film: ${stockInfo(film).short}`} onClick={() => { haptic(); setFilm(FILMS[(FILMS.indexOf(film) + 1) % FILMS.length]!); }}>
-            <Bracket corner="bl" from="#ffd23f" to="#ff6a2b" />
+            <Bracket shape="bl" />
             <b>{FILM_CODE[film] ?? 'FILM'}</b>
           </button>
         </div>
@@ -267,8 +254,7 @@ export function CameraScreen({ onClose, onCaptured, lastThumb, onOpenLast }: {
         </div>
 
         <div className="cam-right" aria-label="Exposure mode: auto">
-          <Bracket corner="tr" from="#ff8a3d" to="#c4562a" />
-          <Bracket corner="br" from="#c4562a" to="#8a5a2b" />
+          <Bracket shape="r" />
           <b>A</b>
         </div>
 
