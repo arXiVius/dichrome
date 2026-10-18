@@ -318,7 +318,8 @@ export function Editor({ state, wide, landscape, onOpenFile, onToast, onError }:
       reveal={revealCount}
       frame={provisional?.frame ?? state.frame}
       look={lookImage}
-      crop={state.crop}
+      crop={provisional ? provisional.crop : state.crop}
+      cover={state.cover}
       focusMask={focusMask}
       // Pembanding/intip asli: `original` ikut resolusi render (tajam saat zoom).
       // Setelah hapus objek, `before` (sebelum retouch, resolusi pembukaan) supaya

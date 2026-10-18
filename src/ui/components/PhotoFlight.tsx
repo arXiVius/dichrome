@@ -165,7 +165,8 @@ function fly(outer: HTMLElement, inner: HTMLElement, from: Box, to: Box, aspect:
     const b = mix(from, to, p);
     const sx = b.width / to.width, sy = b.height / to.height;
     const cw = coverW(b), ch = cw / aspect, k = cw / baseW;
-    const r = lerp(r0, r1, Math.min(1, p));
+    // Sudut berubah bertahap sepanjang penerbangan (smoothstep, tanpa ikut memantul pegas).
+    const q = Math.min(1, i / SAMPLES * 1.25), r = lerp(r0, r1, q * q * (3 - 2 * q));
     const offset = i / SAMPLES;
     outerFrames.push({ offset, transform: `translate(${b.left - to.left}px, ${b.top - to.top}px) scale(${sx}, ${sy})`, borderRadius: `${r / sx}px / ${r / sy}px` });
     innerFrames.push({ offset, transform: `translate(${(b.width - cw) / 2 / sx}px, ${(b.height - ch) / 2 / sy}px) scale(${k / sx}, ${k / sy})` });

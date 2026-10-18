@@ -257,7 +257,7 @@ export class Projects {
   async #openRecord(record: ProjectRecord, file: File): Promise<void> {
     this.#set({ currentId: undefined });
     const removals = await this.store.removals(record.id).catch(() => [] as SavedRemoval[]);
-    if (!(await this.engine.openFile(file, { params: record.params, removals, crop: record.crop }))) return;
+    if (!(await this.engine.openFile(file, { params: record.params, removals, crop: record.crop, cover: this.#thumbs.get(record.id) }))) return;
     const state = this.engine.getState();
     this.#saved = { params: state.params, retouches: state.retouches, frame: undefined, crop: state.crop };
     record.updatedAt = Date.now();

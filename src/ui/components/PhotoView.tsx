@@ -143,6 +143,7 @@ export function PhotoView({
   content,
   look,
   crop,
+  cover,
   brush,
   fitInsets,
   reveal,
@@ -165,6 +166,8 @@ export function PhotoView({
   look?: ImageBitmap;
   /** Crop & rotate yang ditampilkan (`undefined` = utuh). */
   crop?: Crop;
+  /** Gambar penutup (thumbnail proyek) selagi foto dikembangkan; memudar keluar sekali. */
+  cover?: string;
   /** Keep the fitted photo centered in the unobscured part of an overlay viewport. */
   fitInsets?: { bottom?: number; right?: number };
   /**
@@ -749,6 +752,21 @@ export function PhotoView({
                 </div>
               )}
             </div>
+            <AnimatePresence>
+              {cover && (
+                <motion.img
+                  key="cover"
+                  src={cover}
+                  alt=""
+                  aria-hidden="true"
+                  draggable={false}
+                  initial={false}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.3, ease: 'easeOut' }}
+                  style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', borderRadius: EDITOR_PHOTO_RADIUS, pointerEvents: 'none' }}
+                />
+              )}
+            </AnimatePresence>
             {compare && !picking && (
               <ImageCompare
                 state={split}

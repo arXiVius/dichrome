@@ -56,7 +56,13 @@ export interface EngineState {
    * editor langsung menampilkan foto (dengan look LUT) sementara engine
    * mengembangkan di belakang.
    */
-  preview?: { frame: Frame; params: RenderParams };
+  preview?: { frame: Frame; params: RenderParams; crop?: Crop };
+  /**
+   * Proyek yang dibuka lagi: thumbnail hasil akhirnya (sudah ber-grade, crop,
+   * dan Remove) menutup foto sampai resep dan penghapusan objeknya selesai
+   * dipasang -- jadi foto tampil sekali saja, bukan bertahap.
+   */
+  cover?: string;
   fileName?: string;
   params: RenderParams;
   /** Nilai "reset" untuk foto ini: baseline + saran input dari decoder. */
@@ -105,6 +111,8 @@ export interface OpenRestore {
   params: RenderParams;
   removals: readonly SavedRemoval[];
   crop?: Crop;
+  /** URL thumbnail proyek (lihat `EngineState.cover`). */
+  cover?: string;
 }
 
 function copyRemoval({ crop, output }: SavedRemoval): SavedRemoval {
@@ -583,11 +591,11 @@ export class Engine {
     const stillCurrent = () => token === this.#openToken;
     const previousPhase = this.#state.fileName && this.#state.frame ? 'editing' : 'idle';
     this.#dirty = false;
-    this.#set({ phase: 'opening', opening: { name: file.name, stage: 'Reading…' }, error: undefined, preview: undefined });
+    this.#set({ phase: 'opening', opening: { name: file.name, stage: 'Reading…' }, error: undefined, preview: undefined, cover: restore?.cover });
     // Paralel dengan decode dan persiapan engine: pratinjau browser seketika.
     const previewParams = restore ? { ...this.#state.params, ...restore.params } : this.#state.params;
     void quickPreview(file).then((frame) => {
-      if (frame && stillCurrent() && this.#state.phase === 'opening') this.#set({ preview: { frame, params: previewParams } });
+      if (frame && stillCurrent() && this.#state.phase === 'opening') this.#set({ preview: { frame, params: previewParams, crop: restore?.crop } });
     });
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
@@ -647,11 +655,12 @@ export class Engine {
       void client.finishOpen(token).catch(() => {});
       if (restore) await this.#restore(restore, token);
       else if (params.lensBlurEnabled) this.#depth.ensure();
+      if (stillCurrent()) this.#set({ cover: undefined });
       return stillCurrent();
     } catch (error) {
       void client.discardOpen(token).catch(() => {});
       if (!stillCurrent()) return false;
-      this.#set({ phase: previousPhase, opening: undefined, preview: undefined, error: describeError(error, file.name) });
+      this.#set({ phase: previousPhase, opening: undefined, preview: undefined, cover: undefined, error: describeError(error, file.name) });
       if (previousPhase === 'editing') this.requestRender();
       return false;
     }
@@ -688,7 +697,7 @@ export class Engine {
   cancelOpening(): void {
     void this.#client?.discardOpen(this.#openToken).catch(() => {});
     this.#openToken += 1;
-    this.#set({ phase: this.#state.fileName && this.#state.frame ? 'editing' : 'idle', opening: undefined, preview: undefined });
+    this.#set({ phase: this.#state.fileName && this.#state.frame ? 'editing' : 'idle', opening: undefined, preview: undefined, cover: undefined });
     if (this.#state.phase === 'editing') this.requestRender();
   }
 
@@ -745,7 +754,7 @@ export class Engine {
     if (client) void client.close().then(() => client.dispose()).catch((error: unknown) =>
       client.shutdown(error instanceof Error ? error : new Error(String(error)), false));
     this.#interactionChanged = false;
-    this.#set({ engine: 'paused', phase: 'idle', rendering: false, interacting: false, frame: undefined, original: undefined, before: undefined, fileName: undefined, opening: undefined, retouches: 0, crop: undefined });
+    this.#set({ engine: 'paused', phase: 'idle', rendering: false, interacting: false, frame: undefined, original: undefined, before: undefined, fileName: undefined, opening: undefined, retouches: 0, crop: undefined, cover: undefined });
   }
 
   #clearHistory(): void {
