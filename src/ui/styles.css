@@ -34,11 +34,11 @@
 
   --blue: #0a84ff;
   /* Alpha belongs to surfaces, never to containers carrying text. */
-  --blue-fill: rgba(10, 132, 255, 0.7);
-  --accent-fill: rgba(10, 132, 255, 0.72);
+  --blue-fill: #0a84ff;
+  --accent-fill: #0a84ff;
   --knob-fill: #fff;
   --scrollbar-thumb: rgba(255, 255, 255, 0.2);
-  --blue-text: #4aa3ff;
+  --blue-text: #0a84ff;
   /*
    * Mode terang (sistem terang, atau html[data-theme="light"] dari pilihan
    * pengguna di theme.ts) membalik "tinta": garis rambut,
@@ -547,7 +547,7 @@ html[data-size="regular"] .start-description { font-size: 15px; }
 .start-actions { margin-top: 32px; display: flex; flex-direction: column; align-items: center; gap: 14px; }
 .start-cta {
   min-height: 48px; padding: 0 26px; border: 0; border-radius: 9999px; margin: 0; cursor: pointer;
-  background: #007aff; color: #fff; font: inherit; font-size: 17px; font-weight: 500; letter-spacing: -0.01em;
+  background: #0a84ff; color: #fff; font: inherit; font-size: 17px; font-weight: 500; letter-spacing: -0.01em;
   transition: background-color 0.2s;
 }
 html[data-size="regular"] .start-cta { min-height: 40px; font-size: 15px; padding: 0 22px; }
@@ -1436,10 +1436,10 @@ html[data-size="compact"] .scope-tabs button { height: 30px; border-radius: 9px;
     --label-3: #8e8e93;
     --separator: rgba(60, 60, 67, 0.29);
     --hairline: rgba(0, 0, 0, 0.1);
-    --blue-fill: rgba(10, 132, 255, 0.92);
-    --accent-fill: rgba(10, 132, 255, 0.85);
+    --blue-fill: #0a84ff;
+    --accent-fill: #0a84ff;
     --scrollbar-thumb: rgba(0, 0, 0, 0.25);
-    --blue-text: #007aff;
+    --blue-text: #0a84ff;
     --blue-wash: rgba(10, 132, 255, 0.12);
     --intro-tint: rgba(255, 255, 255, 0.55);
     --intro-ring: rgba(255, 255, 255, 1);
@@ -1482,10 +1482,10 @@ html[data-size="compact"] .scope-tabs button { height: 30px; border-radius: 9px;
   --label-3: #8e8e93;
   --separator: rgba(60, 60, 67, 0.29);
   --hairline: rgba(0, 0, 0, 0.1);
-  --blue-fill: rgba(10, 132, 255, 0.92);
-  --accent-fill: rgba(10, 132, 255, 0.85);
+  --blue-fill: #0a84ff;
+  --accent-fill: #0a84ff;
   --scrollbar-thumb: rgba(0, 0, 0, 0.25);
-  --blue-text: #007aff;
+  --blue-text: #0a84ff;
   --blue-wash: rgba(10, 132, 255, 0.12);
   --intro-tint: rgba(255, 255, 255, 0.55);
   --intro-ring: rgba(255, 255, 255, 1);
@@ -1875,7 +1875,7 @@ html[data-flight="close"] .bento-tile[data-flying] { visibility: hidden; }
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   height: 52px; padding: 0 26px; min-width: 176px; border-radius: 26px; corner-shape: round; cursor: pointer;
   font: inherit; font-size: 16px; font-weight: 600; letter-spacing: -0.01em; color: #fff;
-  background: rgba(10, 132, 255, 0.88);
+  background: #0a84ff;
   -webkit-backdrop-filter: blur(24px) saturate(180%); backdrop-filter: blur(24px) saturate(180%);
   border: 0.5px solid rgba(255, 255, 255, 0.22); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35), inset 0 0.5px 0 rgba(255, 255, 255, 0.25);
   -webkit-tap-highlight-color: transparent;
