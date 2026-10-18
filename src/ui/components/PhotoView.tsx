@@ -719,8 +719,9 @@ export function PhotoView({
             // disembunyikan, supaya tidak tampak dua foto di balik latar yang memudar.
             style={{ position: 'absolute', left: rect.left, top: rect.top, width: rect.width, height: rect.height, visibility: fullscreen ? 'hidden' : undefined }}
           >
-            {/* Sudut membulat ikut foto (tetap sama di layar saat diperbesar). */}
-            <div style={{ position: 'absolute', inset: 0, transformOrigin: '0 0', transform: `translate(${view.tx}px, ${view.ty}px) scale(${view.s})`, borderRadius: EDITOR_PHOTO_RADIUS / view.s, overflow: 'hidden' }}>
+            {/* Sudut membulat ikut foto (tetap sama di layar saat diperbesar). Lewat kelas + variabel,
+                bukan border-radius inline: squircle.ts tidak memasang clip-path tertunda (kedip) di sini. */}
+            <div className="photo-rounded" style={{ position: 'absolute', inset: 0, transformOrigin: '0 0', transform: `translate(${view.tx}px, ${view.ty}px) scale(${view.s})`, ['--photo-r' as string]: `${EDITOR_PHOTO_RADIUS / view.s}px` }}>
               <CropLayer crop={activeCrop} a={aspectA}>
                 {content ?? (frame && <FrameCanvas key={frame.colorSpace} frame={frame} />)}
                 {!content && <LookLayer image={look} />}
@@ -763,7 +764,8 @@ export function PhotoView({
                   initial={false}
                   exit={{ opacity: 0 }}
                   transition={{ duration: 0.3, ease: 'easeOut' }}
-                  style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', borderRadius: EDITOR_PHOTO_RADIUS, pointerEvents: 'none' }}
+                  className="photo-rounded"
+                  style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', ['--photo-r' as string]: `${EDITOR_PHOTO_RADIUS}px`, pointerEvents: 'none' }}
                 />
               )}
             </AnimatePresence>

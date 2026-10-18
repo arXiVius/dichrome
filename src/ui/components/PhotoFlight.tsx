@@ -25,7 +25,7 @@ import { Spinner } from './Overlays';
 interface Box { left: number; top: number; width: number; height: number }
 
 type Flight =
-  | { key: number; mode: 'open'; projectId: string; src: string; from: Box; aspect: number }
+  | { key: number; mode: 'open'; projectId: string; src: string; from: Box; radius: number; aspect: number }
   | { key: number; mode: 'close'; projectId: string; snapshot: HTMLCanvasElement; from: Box; aspect: number };
 
 let current: Flight | undefined;
@@ -39,6 +39,9 @@ const getFlight = () => current;
 
 const reduced = () => typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 const boxOf = (el: Element): Box => { const r = el.getBoundingClientRect(); return { left: r.left, top: r.top, width: r.width, height: r.height }; };
+/** Sudut ubin Recent di layar: foto terbang mulai/berakhir tepat dengan sudut itu (tanpa kedip). */
+const TILE_RADIUS = 22;
+const radiusOf = (el: Element | null): number => (el && parseFloat(getComputedStyle(el).borderTopLeftRadius)) || TILE_RADIUS;
 
 /** Foto proyek yang sedang tampil di editor (kotak pas PhotoView). */
 function photoElement(): HTMLElement | null {
@@ -68,7 +71,7 @@ export function isClosingFlight(): boolean {
 /** Mulai penerbangan buka dari bilah Recent. `false`: tidak terbang (pakai dialog biasa). */
 export function launchOpen(projectId: string, src: string | undefined, from: Element, aspect: number): boolean {
   if (!src || reduced()) return false;
-  current = { key: nextKey++, mode: 'open', projectId, src, from: boxOf(from), aspect: aspect > 0 ? aspect : 1 };
+  current = { key: nextKey++, mode: 'open', projectId, src, from: boxOf(from), radius: radiusOf(from), aspect: aspect > 0 ? aspect : 1 };
   setStage('open');
   emit();
   return true;
@@ -246,7 +249,7 @@ export function PhotoFlight() {
     const alive = () => current?.key === key;
     if (flight.mode === 'open') {
       const to = holdBox(flight.aspect);
-      at.current = { box: to, radius: 12, moving: fly(outer, inner, flight.from, to, flight.aspect, 14, 12) };
+      at.current = { box: to, radius: EDITOR_PHOTO_RADIUS, moving: fly(outer, inner, flight.from, to, flight.aspect, flight.radius, EDITOR_PHOTO_RADIUS) };
       return;
     }
     // Tutup: Recent tampil tanpa animasi naik (isClosingFlight); ukur bilahnya setelah terpasang.
@@ -255,7 +258,7 @@ export function PhotoFlight() {
     void (async () => {
       await waitFor(() => slatElement(flight.projectId), 900, alive);
       const target = await stableBox(() => slatElement(flight.projectId), 500, alive);
-      if (target && alive()) await fly(outer, inner, flight.from, target, flight.aspect, EDITOR_PHOTO_RADIUS, 14);
+      if (target && alive()) await fly(outer, inner, flight.from, target, flight.aspect, EDITOR_PHOTO_RADIUS, radiusOf(slatElement(flight.projectId)));
       if (!alive()) return;
       // Foto bilah muncul di bawah salinan pada frame yang sama, lalu salinan memudar.
       setStage(undefined);
@@ -308,7 +311,7 @@ export function PhotoFlight() {
       } else {
         setStage(undefined);
         const back = slatElement(flight.projectId);
-        if (back) await fly(outer, inner, at.current.box, boxOf(back), flight.aspect, at.current.radius, 14);
+        if (back) await fly(outer, inner, at.current.box, boxOf(back), flight.aspect, at.current.radius, radiusOf(back));
       }
       if (!alive()) return;
       setStage(undefined);
