@@ -71,7 +71,7 @@ dari mockup "gammā editor revamp" (artifact privat pemilik) dikerjakan:
 
 | Bagian | Jadi | Di mana |
 |---|---|---|
-| Recent: thumbnail | Sisi pendek ~1300 px (maks. 2600); frame gesture 256 px tidak dipakai | `projects.ts` `THUMB_SHORT` |
+| Recent: thumbnail | Dari pratinjau setajam layar (`engine.sharpEdge`, sedikit di atas piksel layar), maks. 4096 px, JPEG 0,9; frame ringan tidak dipakai (tunggu maks. 1,5 s) | `projects.ts` `THUMB_LONG` |
 | Recent: saat dimuat | Placeholder pekat `--recent-placeholder`; baki aksi baru terlihat saat foto terangkat; foto memudar masuk | `RecentStrip.tsx` |
 | Recent: kaca intro | GlassOrb + IntroBackdrop tidak dipasang selama Recent | `Start.tsx` |
 | Buka/tutup proyek | `PhotoFlight`: foto terbang bilah -> kotak foto editor (pil status + Cancel menggantikan dialog Opening; mendarat setelah render resep proyek), dan kembali saat Close Photo | `components/PhotoFlight.tsx`, `[data-photo-box]` di PhotoView |

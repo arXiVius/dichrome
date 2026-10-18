@@ -345,6 +345,14 @@ export class Engine {
   /** Salinan penghapusan objek yang terpasang, urut; worker memegang aslinya. */
   #removals: SavedRemoval[] = [];
   get removals(): readonly SavedRemoval[] { return this.#removals; }
+  /**
+   * Sisi panjang pratinjau setajam layar (resolusi yang diminta PhotoView,
+   * maks. ukuran asli): thumbnail proyek baru dibuat dari frame sebesar ini.
+   */
+  get sharpEdge(): number {
+    const size = this.#imageSize;
+    return size ? Math.min(this.#previewLongEdge, Math.max(size.width, size.height)) : this.#previewLongEdge;
+  }
   /** Ekspor terakhir lebih kecil dari aslinya (difusi, Fase 2D). */
   lastExportLimited: { width: number; height: number } | undefined;
   #inFlight: number | undefined;

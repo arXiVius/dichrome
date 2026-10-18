@@ -45,6 +45,8 @@ export interface ProjectEngine {
   openFile(file: File, restore?: OpenRestore): Promise<boolean>;
   closePhoto(): void;
   readonly removals: readonly SavedRemoval[];
+  /** Sisi panjang pratinjau setajam layar (lihat `Engine.sharpEdge`). */
+  readonly sharpEdge?: number;
 }
 
 /**
@@ -57,13 +59,19 @@ export const HAS_PROJECTS_KEY = 'gamma.hasProjects';
 export const SAVE_DELAY_MS = 800;
 /** Lama Undo setelah menghapus proyek. */
 export const UNDO_MS = 5000;
-/** Thumbnail: sisi pendek ~1300 px (tajam di bilah Recent terbuka), sisi panjang maks. 2600 px. */
-const THUMB_SHORT = 1300;
-const THUMB_LONG = 2600;
+/**
+ * Thumbnail = pratinjau setajam layar yang tampil (sedikit di atas piksel
+ * layar, kelipatan 256), tidak diperkecil kecuali melebihi 4096 px; tajam
+ * sebagai ubin Recent, foto terbang, dan penutup saat proyek dibuka lagi.
+ */
+const THUMB_LONG = 4096;
+const THUMB_QUALITY = 0.9;
+/** Tunggu pratinjau setajam layar paling lama segini sebelum memakai frame yang ada. */
+const THUMB_WAIT_MS = 1500;
 
 type Listener = () => void;
 
-/** Thumbnail JPEG dari pratinjau yang tampil, dengan crop-nya (lihat THUMB_SHORT/THUMB_LONG; tidak diperbesar). */
+/** Thumbnail JPEG dari pratinjau yang tampil, dengan crop-nya (lihat THUMB_LONG; tidak diperbesar). */
 export async function frameThumbnail(input: Frame, crop?: Crop): Promise<Blob | undefined> {
   if (typeof document === 'undefined') return undefined;
   const frame = crop && !isIdentityCrop(crop, input.height / input.width) ? croppedFrame(input, crop) : input;
@@ -73,7 +81,7 @@ export async function frameThumbnail(input: Frame, crop?: Crop): Promise<Blob | 
   const ctx = source.getContext('2d', { colorSpace: frame.colorSpace });
   if (!ctx) return undefined;
   ctx.putImageData(new ImageData(new Uint8ClampedArray(frame.pixels), frame.width, frame.height, { colorSpace: frame.colorSpace }), 0, 0);
-  const scale = Math.min(1, THUMB_SHORT / Math.min(frame.width, frame.height), THUMB_LONG / Math.max(frame.width, frame.height));
+  const scale = Math.min(1, THUMB_LONG / Math.max(frame.width, frame.height));
   const out = document.createElement('canvas');
   out.width = Math.max(1, Math.round(frame.width * scale));
   out.height = Math.max(1, Math.round(frame.height * scale));
@@ -81,7 +89,7 @@ export async function frameThumbnail(input: Frame, crop?: Crop): Promise<Blob | 
   if (!octx) return undefined;
   octx.imageSmoothingQuality = 'high';
   octx.drawImage(source, 0, 0, out.width, out.height);
-  return new Promise((resolve) => out.toBlob((blob) => resolve(blob ?? undefined), 'image/jpeg', 0.82));
+  return new Promise((resolve) => out.toBlob((blob) => resolve(blob ?? undefined), 'image/jpeg', THUMB_QUALITY));
 }
 
 function croppedFrame(frame: Frame, crop: Crop): Frame {
@@ -104,6 +112,7 @@ export class Projects {
   readonly #thumbs = new Map<string, string>();
   #loading: Promise<void> | undefined;
   #saveTimer: ReturnType<typeof setTimeout> | undefined;
+  #thumbWaited = false;
   #saving: Promise<void> = Promise.resolve();
   #undoTimer: ReturnType<typeof setTimeout> | undefined;
   #pendingDelete: ProjectRecord | undefined;
@@ -390,8 +399,18 @@ export class Projects {
     if (!record || state.phase !== 'editing') return;
     const paramsChanged = state.params !== this.#saved.params;
     const removalsChanged = state.retouches !== this.#saved.retouches;
-    // Frame ringan selama gesture (256 px) tidak dijadikan thumbnail.
-    const frame = !state.rendering && !state.interacting ? state.frame : undefined;
+    // Frame ringan (gesture 256 px, format 512 px, render pembukaan 1024 px) tidak
+    // dijadikan thumbnail: tunggu pratinjau setajam layar supaya thumbnail tidak pecah.
+    const sharp = (f: NonNullable<typeof state.frame>) => this.engine.sharpEdge === undefined
+      || Math.max(f.width, f.height) >= this.engine.sharpEdge - 1;
+    const settled = !state.rendering && !state.interacting ? state.frame : undefined;
+    // Pratinjau yang dibatasi (memori GPU, difusi) tidak pernah setajam itu: sekali menunggu, lalu pakai yang ada.
+    const frame = settled && (sharp(settled) || this.#thumbWaited) ? settled : undefined;
+    if (settled && !frame) {
+      this.#thumbWaited = true;
+      setTimeout(() => this.#scheduleSave(), THUMB_WAIT_MS);
+    }
+    if (frame) this.#thumbWaited = false;
     const cropChanged = state.crop !== this.#saved.crop;
     const thumbChanged = !!frame && (frame !== this.#saved.frame || cropChanged);
     if (!paramsChanged && !removalsChanged && !thumbChanged && !cropChanged) return;

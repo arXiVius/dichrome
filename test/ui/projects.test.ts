@@ -12,6 +12,7 @@ class FakeEngine implements ProjectEngine {
     phase: 'idle', params: { ...BASELINE_RENDER_PARAMS }, rendering: false, retouches: 0,
   } as unknown as EngineState;
   removals: SavedRemoval[] = [];
+  sharpEdge?: number;
   opened: Array<{ file: File; restore?: OpenRestore }> = [];
   fail = false;
   readonly listeners = new Set<() => void>();
@@ -42,8 +43,9 @@ function setup() {
   const engine = new FakeEngine();
   const store = new MemoryProjectStore();
   let n = 0;
-  const projects = new Projects(engine, store, async () => new Blob(['thumb']), () => `blob:thumb-${++n}`);
-  return { engine, store, projects };
+  const thumbs: number[] = [];
+  const projects = new Projects(engine, store, async (frame) => { thumbs.push(frame.width); return new Blob(['thumb']); }, () => `blob:thumb-${++n}`);
+  return { engine, store, projects, thumbs };
 }
 
 const settle = async () => {
@@ -65,6 +67,26 @@ describe('Projects', () => {
     expect(card?.thumb).toMatch(/^blob:thumb/);
     expect(projects.getState().currentId).toBe(card?.id);
     expect(await store.file(card!.id)).toBeInstanceOf(File);
+  });
+
+  it('waits for a screen-sharp preview before making the thumbnail', async () => {
+    const { projects, engine, thumbs } = setup();
+    engine.sharpEdge = 80;
+    await projects.openFile(photo('a.jpg'));
+    await vi.advanceTimersByTimeAsync(SAVE_DELAY_MS + 10);
+    expect(thumbs).toEqual([]);
+    engine.set({ frame: { width: 80, height: 60, pixels: new Uint8ClampedArray(80 * 60 * 4), colorSpace: 'srgb' } });
+    await settle();
+    expect(thumbs).toEqual([80]);
+  });
+
+  it('falls back to the preview it has when a sharp one never comes', async () => {
+    const { projects, engine, thumbs } = setup();
+    engine.sharpEdge = 4096;
+    await projects.openFile(photo('a.jpg'));
+    await vi.advanceTimersByTimeAsync(SAVE_DELAY_MS + 3000);
+    await vi.runOnlyPendingTimersAsync();
+    expect(thumbs).toEqual([40]);
   });
 
   it('autosaves the recipe after edits and keeps the newest project first', async () => {
