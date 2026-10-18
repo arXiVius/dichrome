@@ -1949,7 +1949,9 @@ html[data-flight="close"] .bento-tile[data-flying] { visibility: hidden; }
 }
 .cam-icon[aria-pressed="false"] { color: rgba(255, 255, 255, 0.45); }
 .cam-finder {
-  position: relative; flex: 1; min-height: 0; margin: 2px 10px 10px; border-radius: 30px; overflow: hidden;
+  /* Jendela bidik 3:4 seperti kamera iPhone; sisanya untuk pelat kontrol (tidak berdesakan di bawah). */
+  position: relative; flex: 0 0 auto; margin: 2px 10px 0; border-radius: 30px; overflow: hidden;
+  height: min(calc((100vw - 20px) * 4 / 3), calc(100dvh - var(--safe-top, 0px) - var(--safe-bottom, 0px) - 52px - 196px));
   background: #111; touch-action: manipulation;
 }
 .cam-video { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
@@ -1986,57 +1988,57 @@ html[data-flight="close"] .bento-tile[data-flying] { visibility: hidden; }
 .cam-flip { background: rgba(0, 0, 0, 0.32); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); }
 .cam-plate {
   /* Tanpa latar; jarak antar elemen = proporsi pelat Moment (persen lebar pelat). Tinggi isi 110 px. */
-  flex-shrink: 0; height: 142px; margin: 0 8px; display: flex; align-items: center;
+  flex: 1 0 186px; margin: 0 8px; display: flex; align-items: center;
   padding: 0 0 0 5%; box-sizing: border-box;
 }
 .cam-last {
-  flex-shrink: 0; width: 8%; aspect-ratio: 29 / 54; padding: 0; border: 2.5px solid #000; border-radius: 999px; overflow: hidden; cursor: pointer;
+  flex-shrink: 0; width: 9%; aspect-ratio: 29 / 54; padding: 0; border: 2.5px solid #000; border-radius: 999px; overflow: hidden; cursor: pointer;
   background: #1c1c1e; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.14); box-sizing: border-box;
 }
 .cam-last img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.cam-left { position: relative; flex-shrink: 0; width: 13%; margin-left: 7.5%; height: 110px; }
+.cam-left { position: relative; flex-shrink: 0; width: 14%; margin-left: 6.5%; height: 132px; }
 .cam-bracket-btn {
-  position: absolute; left: 0; width: 100%; height: 42px; border: 0; background: none; padding: 0; color: #d8d8da; cursor: pointer;
-  font: inherit; font-size: 12px; font-weight: 500; letter-spacing: 0.05em; text-align: left;
+  position: absolute; left: 0; width: 100%; height: 52px; border: 0; background: none; padding: 0; color: #d8d8da; cursor: pointer;
+  font: inherit; font-size: 14px; font-weight: 500; letter-spacing: 0.05em; text-align: left;
 }
 .cam-bracket-btn.is-top { top: 0; }
 .cam-bracket-btn.is-bottom { bottom: 0; }
-.cam-bracket-btn b { position: absolute; left: 20%; font-weight: 500; white-space: nowrap; }
-.cam-bracket-btn.is-top b { top: 13px; }
-.cam-bracket-btn.is-bottom b { bottom: 12px; }
+.cam-bracket-btn b { position: absolute; left: 17%; font-weight: 500; white-space: nowrap; }
+.cam-bracket-btn.is-top b { top: 16px; }
+.cam-bracket-btn.is-bottom b { bottom: 15px; }
 /* Braket: garis tipis bergradien hanya di sisi yang ada (mask membuang isi kotak). */
 .cam-br {
   position: absolute; inset: 0; pointer-events: none; border: 1.5px solid transparent; background: var(--br) border-box;
   -webkit-mask: linear-gradient(#000 0 0) padding-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor;
   mask: linear-gradient(#000 0 0) padding-box exclude, linear-gradient(#000 0 0);
 }
-.cam-br.is-tl { border-right: 0; border-bottom: 0; border-top-left-radius: 16px; --br: linear-gradient(45deg, #3a5bff, #e2a6ff); }
-.cam-br.is-bl { border-right: 0; border-top: 0; border-bottom-left-radius: 16px; --br: linear-gradient(135deg, #ffd23f, #ff5a2b); }
+.cam-br.is-tl { border-right: 0; border-bottom: 0; border-top-left-radius: 18px; --br: linear-gradient(45deg, #3a5bff, #e2a6ff); }
+.cam-br.is-bl { border-right: 0; border-top: 0; border-bottom-left-radius: 18px; --br: linear-gradient(135deg, #ffd23f, #ff5a2b); }
 .cam-br.is-r {
-  border-left: 0; border-radius: 0 16px 16px 0;
+  border-left: 0; border-radius: 0 18px 18px 0;
   --br: linear-gradient(to bottom, #c9773a 0%, #ff4f2b 42%, #b07a45 58%, #8f6a3f 100%);
 }
 /* Tombol jepret sejajar tepi atas braket, saklar look sejajar tepi bawahnya. */
-.cam-center { flex-shrink: 0; width: 20.5%; margin-left: 6%; height: 110px; display: flex; flex-direction: column; align-items: center; justify-content: space-between; }
+.cam-center { flex-shrink: 0; width: 22%; margin-left: 5.5%; height: 132px; display: flex; flex-direction: column; align-items: center; justify-content: space-between; }
 .cam-shutter {
-  width: 100%; max-width: 78px; aspect-ratio: 1; padding: 9%; border: 0; border-radius: 50%; background: #000; cursor: pointer; box-sizing: border-box;
+  width: 100%; max-width: 88px; aspect-ratio: 1; padding: 8%; border: 0; border-radius: 50%; background: #000; cursor: pointer; box-sizing: border-box;
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.07), 0 10px 24px rgba(0, 0, 0, 0.7);
 }
 .cam-shutter span { display: block; width: 100%; height: 100%; border-radius: 50%; background: #cfd5d2; }
-.cam-look { display: flex; padding: 2px; border-radius: 14px; background: #1f1f21; }
+.cam-look { display: flex; padding: 2px; border-radius: 16px; background: #1f1f21; }
 .cam-look button {
-  width: 34px; height: 24px; border: 0; border-radius: 12px; background: none; color: rgba(255, 255, 255, 0.6); cursor: pointer;
+  width: 38px; height: 28px; border: 0; border-radius: 14px; background: none; color: rgba(255, 255, 255, 0.6); cursor: pointer;
   display: flex; align-items: center; justify-content: center; font: inherit; font-size: 14px; font-weight: 750;
 }
 .cam-look button[aria-checked="true"] { background: #0a84ff; color: #fff; }
-.cam-right { position: relative; flex-shrink: 0; width: 13%; margin-left: 6%; height: 110px; display: flex; align-items: center; justify-content: center; }
-.cam-right b { font-size: 12px; font-weight: 500; color: #d8d8da; padding-right: 2px; }
-.cam-readouts { flex-shrink: 0; width: 13%; min-width: 46px; margin-left: 3.5%; display: flex; flex-direction: column; gap: 10px; }
+.cam-right { position: relative; flex-shrink: 0; width: 14%; margin-left: 5.5%; height: 132px; display: flex; align-items: center; justify-content: center; }
+.cam-right b { font-size: 14px; font-weight: 500; color: #d8d8da; padding-right: 2px; }
+.cam-readouts { flex-shrink: 0; width: 14%; min-width: 50px; margin-left: 4%; display: flex; flex-direction: column; gap: 14px; }
 .cam-readouts span { display: flex; flex-direction: column; }
-.cam-readouts small { font-size: 10px; color: rgba(235, 235, 245, 0.62); padding-bottom: 1px; border-bottom: 1px solid rgba(255, 255, 255, 0.3); }
-.cam-readouts b { font-size: 16px; font-weight: 400; font-variant-numeric: tabular-nums; padding-top: 1px; color: #ececee; white-space: nowrap; }
+.cam-readouts small { font-size: 11px; color: rgba(235, 235, 245, 0.62); padding-bottom: 1px; border-bottom: 1px solid rgba(255, 255, 255, 0.3); }
+.cam-readouts b { font-size: 19px; font-weight: 400; font-variant-numeric: tabular-nums; padding-top: 1px; color: #ececee; white-space: nowrap; }
 .cam-ruler {
-  flex-shrink: 0; width: 12px; margin-left: auto; height: 110px; display: flex; flex-direction: column; justify-content: center; align-items: flex-end; gap: 4px;
+  flex-shrink: 0; width: 14px; margin-left: auto; height: 132px; display: flex; flex-direction: column; justify-content: space-between; align-items: flex-end; gap: 0;
   touch-action: none; cursor: ns-resize; outline: none;
 }
 .cam-ruler i { display: block; width: 7px; height: 1.5px; background: rgba(255, 255, 255, 0.24); }
