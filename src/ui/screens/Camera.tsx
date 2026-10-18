@@ -49,6 +49,8 @@ const EV_MAX = 2;
 const EV_PX = 14;
 /** Jarak geser vertikal (px) per 1/3 EV di jendela bidik (seperti matahari exposure iPhone). */
 const EV_FINDER_PX = 12;
+/** Setengah lintasan matahari exposure (px): di ±EV_MAX garis di sisi itu habis. */
+const SUN_RUN = 48;
 
 const store = {
   get<T extends string>(key: string, fallback: T, allowed: readonly string[]): T {
@@ -193,6 +195,8 @@ export function CameraScreen({ onClose, onCaptured }: {
   const evText = `${ev > 0 ? '+' : ev < 0 ? '−' : ''}${Math.abs(ev).toFixed(1)}`;
   const ticks = Array.from({ length: 2 * EV_MAX / EV_STEP + 1 }, (_, i) => -EV_MAX + i * EV_STEP);
   const supported = backend.modes.includes(mode);
+  /** Posisi matahari (px, positif = turun) di lintasannya. */
+  const sunY = (-ev / EV_MAX) * SUN_RUN;
   const box = FILM_BOX[film] ?? FILM_BOX.kodak_portra_400!;
 
   return (
@@ -248,10 +252,10 @@ export function CameraScreen({ onClose, onCaptured }: {
         )}
         {focus && (
           <span className="cam-focus" data-adjusting={adjusting || undefined} aria-hidden="true" style={{ left: `${focus.x * 100}%`, top: `${focus.y * 100}%` }}>
-            <i />
-            <span style={{ transform: `translateY(${-ev * 9}px)` }}><Icon name="exposure" size={18} strokeWidth={1.8} /></span>
-            <i />
-            <b className="cam-focus-ev">{evText}</b>
+            {/* Matahari meluncur di lintasan tetap; garis atas/bawah memendek-memanjang mengikutinya (tidak menimpa). */}
+            <i style={{ height: SUN_RUN + sunY }} />
+            <span className="cam-sun"><Icon name="exposure" size={18} strokeWidth={1.8} /><b className="cam-focus-ev">{evText}</b></span>
+            <i style={{ height: SUN_RUN - sunY }} />
           </span>
         )}
         {error && <p className="cam-error" role="alert">{error}</p>}

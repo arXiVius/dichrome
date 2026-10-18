@@ -1970,14 +1970,14 @@ html[data-flight="close"] .bento-tile[data-flying] { visibility: hidden; }
   position: absolute; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; gap: 6px;
   color: rgba(255, 255, 255, 0.9); pointer-events: none; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
 }
-.cam-focus i { width: 1.5px; height: 26px; border-radius: 1px; background: rgba(255, 255, 255, 0.8); }
-.cam-focus > span { display: flex; transition: transform 0.15s ease; }
+.cam-focus i { width: 1.5px; border-radius: 1px; background: rgba(255, 255, 255, 0.8); transition: height 0.12s ease; }
+.cam-sun { position: relative; display: flex; }
 .cam-focus-ev {
-  position: absolute; left: calc(100% + 10px); top: 50%; translate: 0 -50%; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums;
+  position: absolute; left: calc(100% + 8px); top: 50%; translate: 0 -50%; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums;
   white-space: nowrap; opacity: 0; transition: opacity 0.2s ease;
 }
 .cam-focus[data-adjusting] .cam-focus-ev { opacity: 1; }
-.cam-focus[data-adjusting] > span { color: #0a84ff; }
+.cam-focus[data-adjusting] .cam-sun { color: #0a84ff; }
 .cam-error { position: absolute; inset: 0; margin: 0; display: flex; align-items: center; justify-content: center; padding: 32px; text-align: center; font-size: 15px; color: rgba(235, 235, 245, 0.7); }
 /* Tirai shutter: menggelap sesaat saat jepret. */
 .cam-curtain { position: absolute; inset: 0; background: #000; pointer-events: none; opacity: 0; transition: opacity 0.14s ease; }
