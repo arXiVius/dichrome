@@ -23,7 +23,7 @@ const FILMS = ['kodak_portra_400', 'kodak_gold_200', 'kodak_ektar_100', 'kodak_p
 /** Singkatan film di braket (seperti kode di kaleng film). */
 const FILM_CODE: Record<string, string> = {
   kodak_portra_400: 'P400', kodak_gold_200: 'G200', kodak_ektar_100: 'E100', kodak_portra_800: 'P800',
-  kodak_ultramax_400: 'UM400', kodak_vision3_500t: '500T', fujifilm_pro_400h: '400H', fujifilm_c200: 'C200',
+  kodak_ultramax_400: 'U400', kodak_vision3_500t: '500T', fujifilm_pro_400h: '400H', fujifilm_c200: 'C200',
 };
 const WB: ReadonlyArray<{ code: string; name: string; gains: readonly [number, number, number] }> = [
   { code: 'AWB', name: 'Auto', gains: [1, 1, 1] },
