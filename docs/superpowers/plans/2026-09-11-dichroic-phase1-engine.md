@@ -277,12 +277,12 @@ git commit -m "chore(spektra): verify upstream Python toolchains and record exac
 
 ```json
 {
-  "name": "dichroic",
+  "name": "palma",
   "private": true,
   "version": "0.1.0",
   "type": "module",
   "license": "GPL-3.0-or-later",
-  "description": "DICHROIC — spectral film simulation in the browser, on WebGPU.",
+  "description": "Palma — spectral film simulation in the browser, on WebGPU.",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",

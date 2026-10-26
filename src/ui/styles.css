@@ -1,5 +1,5 @@
 /*
- * DICHROIC UI -- token dan gaya dasar (DESIGN.md). Dunia visual: aplikasi pro
+ * Palma UI -- token dan gaya dasar (DESIGN.md). Dunia visual: aplikasi pro
  * Apple yang matang (Photos for Mac, Final Cut Pro): panel grafit translucent yang
  * menempel ke tepi jendela, garis pemisah 1 px, radius kecil, satu aksen biru.
  *
@@ -12,9 +12,9 @@
 :root {
   color-scheme: dark;
   /* SF di perangkat Apple; Inter (self-host) di tempat lain, supaya suaranya tetap satu. */
-  --font: -apple-system, BlinkMacSystemFont, "DICHROIC SF Display", "SF Pro Display", "Inter Variable", system-ui, sans-serif;
+  --font: -apple-system, BlinkMacSystemFont, "Palma SF Display", "SF Pro Display", "Inter Variable", system-ui, sans-serif;
   /* Semua teks SF Pro Display (fonts.css), atas permintaan pemilik proyek. */
-  --font-display: -apple-system, BlinkMacSystemFont, "DICHROIC SF Display", "SF Pro Display", "Inter Variable", system-ui, sans-serif;
+  --font-display: -apple-system, BlinkMacSystemFont, "Palma SF Display", "SF Pro Display", "Inter Variable", system-ui, sans-serif;
 
   --bg: #000;
   --bg-elevated: rgba(28, 28, 30, 0.58);

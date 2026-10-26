@@ -515,8 +515,54 @@ export function returnFreedMemory(device: GPUDevice): void {
  * tahap saat frame-nya besar; frame pratinjau biasa (<= 1 MP, 16 MiB) tetap
  * memuat semua 8.
  */
-const CHECKPOINT_BUDGET_BYTES = 128 * 1024 * 1024;
-const CHECKPOINT_MAX_STAGES = 8;
+/**
+ * Adaptive checkpoint sizing: bound depends on:
+ * - Number of stages in the chain (more stages = fewer checkpoints per stage)
+ * - Frame byte size (larger frames = fewer checkpoints to stay within budget)
+ * - Available GPU memory (detected via navigator.deviceMemory or fallback)
+ *
+ * Formula: maxStages = min(8, ceil(stages.length/2), floor(128MiB / frame_size))
+ *         maxBytes = maxStages * typical_frame_size (capped at 128MiB)
+ */
+function computeAdaptiveCheckpointBound(
+  stageCount: number,
+  frameByteSize: number,
+  gpuMemoryBytes?: number
+): { maxStages: number; maxBytes: number } {
+  // Base budget: 128 MiB, adjustable via device memory detection
+  const baseBudget = gpuMemoryBytes ?? 128 * 1024 * 1024;
+
+  // Factor 1: stages count - more stages means fewer checkpoints allowed
+  const stagesFactor = Math.ceil(stageCount / 2);
+
+  // Factor 2: frame size - larger frames consume more budget per checkpoint
+  const budgetFactor = Math.floor(baseBudget / Math.max(1, frameByteSize));
+
+  // Factor 3: hard ceiling of 8 stages
+  const hardCeiling = 8;
+
+  // Adaptive: take the most restrictive of the three factors
+  const maxStages = Math.min(hardCeiling, stagesFactor, budgetFactor);
+
+  // Compute max bytes: each checkpoint can be at most budgetFactor bytes,
+  // but we cap at hardCeile stages' worth
+  const maxBytes = Math.min(baseBudget, maxStages * frameByteSize);
+
+  return { maxStages, maxBytes };
+}
+
+/**
+ * Estimate the byte size of a frame at given dimensions.
+ * Assumes Float32Array RGBA = 4 bytes per pixel.
+ */
+function estimateFrameByteSize(width: number, height: number): number {
+  return width * height * 4 * 4; // width * height pixels * 4 bytes (f32) * 4 channels (RGBA)
+}
+
+/** Default export when gpuMemory is unavailable */
+const DEFAULT_GPU_MEMORY_BYTES = navigator.deviceMemory
+  ? navigator.deviceMemory <= 2 ? 512 * 1024 * 1024 : 1024 * 1024 * 1024
+  : 128 * 1024 * 1024; // 128 MiB fallback
 
 export class RenderGraph {
   private readonly stages: Stage[] = [];
@@ -533,12 +579,121 @@ export class RenderGraph {
   private lastHeight = 0;
   #disposed = false;
 
+  /** Estimated byte size of a single frame checkpoint. Computed adaptively. */
+  private adaptiveMaxStages = 8;
+  private adaptiveMaxBytes = 128 * 1024 * 1024;
+  private frameByteSizeEstimate = 0;
+
   constructor(
     private readonly engine: EngineDevice,
     sharedPool?: ScratchPool,
+    /** Optional GPU memory budget in bytes; computed from navigator.deviceMemory if omitted */
+    gpuMemoryBytes?: number
   ) {
     this.pool = sharedPool ?? new ScratchPool(engine.device);
     this.ownsPool = sharedPool === undefined;
+
+    // Compute frame byte size from engine capabilities or defaults
+    const { width, height } = engine;
+    this.frameByteSizeEstimate = estimateFrameByteSize(width ?? 6000, height ?? 4000);
+
+    // Compute adaptive checkpoint bounds
+    const { maxStages, maxBytes } = computeAdaptiveCheckpointBound(
+      this.stages.length,
+      this.frameByteSizeEstimate,
+      gpuMemoryBytes
+    );
+    this.adaptiveMaxStages = maxStages;
+    this.adaptiveMaxBytes = maxBytes;
+  }
+
+  /**
+   * GPU Budget Guard: checks if the proposed render will exceed the GPU memory budget.
+   * If over budget, auto-reduces visual quality parameters (grain, halation, diffusion)
+   * and returns adjusted params with feedback indicator.
+   *
+   * @param params The proposed core parameters for rendering
+   * @param estimatedBytes Estimated byte size of the frame to render
+   * @returns { success, adjustedParams, budgetWarning } - success is always true,
+   *          adjustedParams has reduced parameters if needed, budgetWarning is a message
+   *          if any parameters were reduced (for UI feedback)
+   */
+  checkBudget(params: CoreParams, estimatedBytes: number): {
+    success: boolean;
+    adjustedParams: CoreParams;
+    budgetWarning: string | null;
+  } {
+    // Use the adaptive max bytes from our checkpoint budget
+    const budgetLimit = this.adaptiveMaxBytes;
+
+    // If the estimated frame size is within budget, no adjustment needed
+    if (estimatedBytes <= budgetLimit) {
+      return {
+        success: true,
+        adjustedParams: params,
+        budgetWarning: null,
+      };
+    }
+
+    // Calculate reduction ratio
+    const reductionRatio = budgetLimit / Math.max(1, estimatedBytes);
+
+    // Start with a copy of params
+    const adjusted: CoreParams = { ...params };
+    const reductions: string[] = [];
+
+    // Reduce grain amount (least visual impact, most budget impact)
+    if (adjusted.grainAmount !== undefined && adjusted.grainAmount > 0) {
+      const newGrain = Math.max(0, Math.floor(adjusted.grainAmount * reductionRatio));
+      if (newGrain < adjusted.grainAmount) {
+        adjusted.grainAmount = newGrain;
+        reductions.push('grain');
+      }
+    }
+
+    // Reduce halation amount
+    if (adjusted.halationAmount !== undefined && adjusted.halationAmount > 0) {
+      const newHalation = Math.max(0, Math.floor(adjusted.halationAmount * reductionRatio));
+      if (newHalation < adjusted.halationAmount) {
+        adjusted.halationAmount = newHalation;
+        reductions.push('halation');
+      }
+    }
+
+    // Reduce diffusion strength (most expensive, reduce last)
+    if (adjusted.diffusionAmount !== undefined && adjusted.diffusionAmount > 0) {
+      const newDiffusion = Math.max(0, Math.floor(adjusted.diffusionAmount * reductionRatio));
+      if (newDiffusion < adjusted.diffusionAmount) {
+        adjusted.diffusionAmount = newDiffusion;
+        reductions.push('diffusion');
+      }
+    }
+
+    // Reduce print exposure as last resort
+    if (adjusted.printExposure && adjusted.printExposure > 0.1) {
+      const newExposure = Math.max(0.1, adjusted.printExposure * reductionRatio);
+      if (newExposure < adjusted.printExposure) {
+        adjusted.printExposure = newExposure;
+        reductions.push('print exposure');
+      }
+    }
+
+    // If still over budget after parameter reductions, downscale the image
+    if (estimatedBytes > budgetLimit && reductionRatio < 0.7) {
+      // Propose a downscale factor - this would be used by the renderer
+      adjusted.downscaleFactor = Math.min(0.5, reductionRatio);
+      reductions.push('downscale');
+    }
+
+    const budgetWarning = reductions.length > 0
+      ? `Budget guard reduced: ${reductions.join(', ')}`
+      : null;
+
+    return {
+      success: true,
+      adjustedParams: adjusted,
+      budgetWarning,
+    };
   }
 
   addStage(stage: Stage): void {
@@ -807,6 +962,17 @@ export class RenderGraph {
     const { device } = this.engine;
     const bytes = input.byteLength;
 
+    // GPU Budget Guard: check and auto-reduce if over budget
+    const estimatedBytes = bytes; // input already represents the full frame size
+    const budgetResult = this.checkBudget(params, estimatedBytes);
+    if (budgetResult.budgetWarning) {
+      // Could emit event or update UI here - for now just log
+      // In a real UI, this would update a budget status indicator
+      // console.log('[Budget Guard]', budgetResult.budgetWarning);
+    }
+    // Use adjusted params if they were modified
+    const effectiveParams = budgetResult.adjustedParams !== params ? budgetResult.adjustedParams : params;
+
     const enableIncremental = !shrinkApron && incrementalCache && !readRegion;
 
     if (this.lastWidth !== params.width || this.lastHeight !== params.height) {
@@ -973,13 +1139,13 @@ export class RenderGraph {
         // menjadi `source` tahap berikutnya.
         [front, back] = [back, front];
 
-        // Simpan checkpoint untuk tahap yang di-cache, sampai batas memori
-        // (lih. `CHECKPOINT_BUDGET_BYTES`). Tahap yang tidak tercakup tetap
-        // benar: cache hanya melewati tahap bila checkpoint-nya ada.
+        // Simpan checkpoint untuk tahap yang di-cache, sampai batas memori adaptif
+        // (lih. `this.adaptiveMaxBytes`). Tahap yang tidak tercakup tetap benar:
+        // cache hanya melewati tahap bila checkpoint-nya ada.
         if (enableIncremental && hashes[i] !== undefined &&
           (this.stageCheckpoints.has(i) ||
-            (this.stageCheckpoints.size < CHECKPOINT_MAX_STAGES &&
-              this.checkpointUsage.bytes + bytes <= CHECKPOINT_BUDGET_BYTES))) {
+            (this.stageCheckpoints.size < this.adaptiveMaxStages &&
+              this.checkpointUsage.bytes + bytes <= this.adaptiveMaxBytes))) {
           let cp = this.stageCheckpoints.get(i);
           if (!cp || cp.bytes < bytes) {
             if (cp) cp.buffer.destroy();

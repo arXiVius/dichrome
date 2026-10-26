@@ -1,8 +1,10 @@
-# DICHROIC — New Feature Ideas
+# Palma — New Feature Ideas
 
 This file records feature ideas beyond the current scope, organized by area.
 Each entry includes a short description, target audience, and rough priority.
 None of these are committed work; they are a backlog for future phases.
+
+*Rebranded from DICHROIC to Palma — 2026-10-26*
 
 ## Film Stock & Profile Features
 

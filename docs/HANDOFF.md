@@ -222,7 +222,7 @@ ulang, tidak diimpor.
   seluruh aplikasi termasuk `data/` (~9,7 MB) dan menambahkan header
   COOP/COEP/CORP ke setiap respons, jadi RAW jalan juga di GitHub Pages.
   Deploy saat itu: `.github/workflows/deploy.yml` (Pages, base `/<repo>/`),
-  https://nathanaellbc.github.io/DICHROIC/ -- sudah diganti Vercel (lihat
+  https://nathanaellbc.github.io/Palma/ -- sudah diganti Vercel (lihat
   Posisi sekarang).
 - **Foto HP:** Orientation EXIF, saran colour space dari ICC, HEIC/AVIF/WebP
   lewat decoder browser. **Prewarm** shader setelah `init`.
@@ -233,7 +233,7 @@ ulang, tidak diimpor.
 
 - **UI selesai versi pertama** (`src/ui/`): React 19 + Motion 12, iPhone-first
   sesuai DESIGN.md (Apple HIG / Liquid Glass) yang diberikan pemilik proyek;
-  desain kanvas di Claude Design ("DICHROIC UI"). Jalankan: `npm run dev`
+  desain kanvas di Claude Design ("Palma UI"). Jalankan: `npm run dev`
   (tambahkan `-- --host` untuk membuka dari HP di jaringan yang sama).
 - **Perbaikan engine penting:** `printScan.wgsl` dan `scannerPost.wgsl`
   mendeteksi NaN dengan `x != x`, yang dilipat jadi `false` oleh compiler
@@ -540,7 +540,7 @@ Setiap baris: keputusan — alasan — biaya bila salah.
 
 ```bash
 gh auth login
-gh repo clone nathanaellbc/DICHROIC
+gh repo clone nathanaellbc/Palma
 cd DICHROIC && git checkout phase2c/params-batch1   # atau main setelah 2B dan 2C digabung
 npm ci
 npm test
