@@ -55,3 +55,42 @@ rates or end-to-end gesture latency.
   returned to 1280 × 960 and the Developing indicator cleared.
 - Production build, TypeScript checking, and lint pass. Physical Safari/iPhone
   gesture performance still needs device verification.
+
+## Follow-up, 25 October 2026
+
+Two per-frame costs outside the GPU render were measured with 30-run medians in
+Node/V8 on one desktop machine (not device frame rates):
+
+| Frame size | `rgbToRgba8` before | after |
+| --- | ---: | ---: |
+| 1024 × 683 | 15 ms | 10 ms |
+| 2048 × 1366 | 60 ms | 37 ms |
+
+`rgbToRgba8` runs on the main thread for every preview (through `rgbToPixels`)
+and on the worker for lossy canvas exports. It now quantizes and interleaves in
+one pass and writes four bytes per pixel as one 32-bit word, instead of writing
+an intermediate Uint8 array and copying it afterwards. The output bytes are
+unchanged: `test/ui/export.test.ts` compares it against `quantize` for Float32,
+8-bit and 16-bit inputs, including NaN, values outside 0..1, and values next to
+the rounding boundary.
+
+The render graph's incremental checkpoint cache is now bounded to 8 stages and
+128 MiB per graph. Each checkpoint is a full-frame GPU buffer (16 bytes per
+pixel), so the previous unbounded cache retained about 490 MiB at a
+2048 × 1366 preview and about 275 MiB at a phone-sized preview — several times
+the preview budget those devices are planned around. Only the earliest stages
+keep checkpoints, because a checkpoint at stage N also lets every later change
+resume at N + 1; a downstream change on a very large preview now skips part of
+the chain rather than nearly all of it.
+
+Remaining, not changed here:
+
+- Waveform and vectorscope traces rescan up to 600k samples on the main thread
+  whenever a new preview frame arrives (~110-140 ms for 2048 × 1366). This runs
+  once per frame while a scope is open, and the scatter into three density
+  arrays is memory-latency bound rather than CPU bound.
+- The comparison frame is cloned into every preview RPC response even though its
+  pixels only change with the photo and preview size (11 MB of the 45 MB
+  payload at 2048 × 1366).
+- Each new zoom step re-downscales the whole source in the worker (24 MP to
+  1024 px: ~420 ms) before the first render at that size.

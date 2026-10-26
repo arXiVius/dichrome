@@ -124,6 +124,23 @@ describe('Projects', () => {
     expect(projects.getState().currentId).toBe(id);
   });
 
+  it('reads a project source for batch export without touching the list', async () => {
+    const { projects, store } = setup();
+    await projects.openFile(photo('batch.jpg'));
+    await settle();
+    const id = projects.getState().currentId!;
+    const before = projects.getState().list[0]!;
+    const source = await projects.source(id);
+    expect(source?.file.name).toBe('batch.jpg');
+    expect(source?.params.film).toBe(BASELINE_RENDER_PARAMS.film);
+    expect(source?.removals).toEqual([]);
+    // Sumber batch tidak boleh membuka proyek, mengubah currentId, atau menyentuh updatedAt.
+    expect(projects.getState().currentId).toBe(id);
+    expect(projects.getState().list[0]?.updatedAt).toBe(before.updatedAt);
+    store.blobs.delete(`file:${id}`);
+    expect(await projects.source(id)).toBeUndefined();
+  });
+
   it('opens a project from Recent, or reports a missing original', async () => {
     const { projects, store, engine } = setup();
     await projects.openFile(photo('x.jpg'));

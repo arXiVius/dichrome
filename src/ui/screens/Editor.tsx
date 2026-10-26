@@ -13,7 +13,7 @@
  * ⇧⌘Z / Ctrl+Y redo, \ sebelum/sesudah, E ekspor, O buka foto, V scope (waveform/parade/vectorscope).
  */
 import { motion, useReducedMotion } from 'motion/react';
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { RenderParams } from '../../params/renderParams';
 import { isPrintLut } from '../../profiles/printLuts';
 import { Icon } from '../components/Icon';
@@ -34,28 +34,36 @@ import { engine } from '../engine/engine';
 import type { EngineState } from '../engine/engine';
 import { isDisplayReferred } from '../engine/display';
 import { prepareFocusOverlay } from '../engine/focusCheck';
-import { dialogOpen } from '../hooks';
+import { dialogOpen, useEngineState } from '../hooks';
 import { THEME_LABEL, nextTheme, useTheme } from '../theme';
 import type { ThemePref } from '../theme';
 import { stockInfo } from '../model/stocks';
+import type { DepthModelId } from '../../depth/model';
 import { GROUPS, choicePatch, findTool, isModified, isScanMode, normalizePatch, stockPatch, valueText, visibleTools } from '../model/tools';
 import type { ChoiceTool, GroupId } from '../model/tools';
-import { ExportContent, ListPickerContent } from './Export';
-import { StockBrowser } from './Stocks';
-import type { StockKind } from './Stocks';
+import { MemoStockBrowser, StockBrowser, type StockKind } from './Stocks';
 import { DropZone } from './Start';
-import { FilmCarousel } from './FilmCarousel';
 import type { Frame } from '../engine/display';
-import { CropEditor } from './CropEditor';
 import { useLookPreview } from '../components/LookLayer';
 import { hasLook, lookFor } from '../engine/looks';
 import { describeStep } from '../model/history';
 import { haptic } from '../haptics';
 import { projects } from '../projects/projects';
-import { RemoveContent } from './Remove';
-import { RefineEdgeContent } from './RefineEdge';
 import { InspectorTool, ResetButton, ToolChips, ToolControl, ToolSwitch } from './ToolControls';
 import type { ToolContext } from './ToolControls';
+
+/**
+ * Layar lembar dimuat dinamis: tidak ikut bundel awal (foto terbuka = jalur
+ * kritis; crop/remove/refine/export/carousel baru dibuka lewat gesture).
+ * Chunk dipra-muat saat browser menganggur (lihat useEffect di `Editor`)
+ * supaya sheet terbuka seketika seperti biasa.
+ */
+const CropEditor = lazy(() => import('./CropEditor').then((m) => ({ default: m.CropEditor })));
+const FilmCarousel = lazy(() => import('./FilmCarousel').then((m) => ({ default: m.FilmCarousel })));
+const ExportContent = lazy(() => import('./Export').then((m) => ({ default: m.ExportContent })));
+const ListPickerContent = lazy(() => import('./Export').then((m) => ({ default: m.ListPickerContent })));
+const RemoveContent = lazy(() => import('./Remove').then((m) => ({ default: m.RemoveContent })));
+const RefineEdgeContent = lazy(() => import('./RefineEdge').then((m) => ({ default: m.RefineEdgeContent })));
 
 type Stocks = Pick<RenderParams, 'film' | 'filmEnabled' | 'paper' | 'process'>;
 
@@ -124,7 +132,6 @@ function useScopePrefs(wide: boolean): [ScopePrefs, (patch: Partial<ScopePrefs>)
 }
 
 export interface EditorProps {
-  state: EngineState;
   wide: boolean;
   landscape: boolean;
   onOpenFile: () => void;
@@ -132,7 +139,10 @@ export interface EditorProps {
   onError: (error: unknown) => void;
 }
 
-export function Editor({ state, wide, landscape, onOpenFile, onToast, onError }: EditorProps) {
+export function Editor({ wide, landscape, onOpenFile, onToast, onError }: EditorProps) {
+  // Berlangganan di sini (bukan lewat prop dari App): seretan slider
+  // memperbarui state ~60×/s, dan hanya subtree Editor yang perlu tahu.
+  const state = useEngineState();
   const [group, setGroup] = useState<GroupId>('film');
   const [toolByGroup, setToolByGroup] = useState<Record<GroupId, string>>({ camera: 'whiteBalance', lens: 'lensBlur', film: 'printExposureEv', color: 'filterC', darkroom: 'dirCouplersAmount', texture: 'halationAmount' });
   const [compare, setCompare] = useState(false);
@@ -154,6 +164,23 @@ export function Editor({ state, wide, landscape, onOpenFile, onToast, onError }:
   // Mode pilih fokus hanya selama grup Lens terbuka dan lens blur menyala.
   const picking = pickingFocus && group === 'lens' && state.params.lensBlurEnabled && state.depth.status === 'ready';
   useEffect(() => setFocusPreview(null), [picking, state.fileName]);
+  // Pra-muat layar lembar saat browser menganggur: chunk diunduh dan di-parse
+  // lebih dulu, jadi sheet pertama terbuka seketika seperti biasa (tanpa ini,
+  // hanya sheet pertamalah yang menunggu chunk).
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const idle = window.requestIdleCallback ?? ((cb: IdleRequestCallback) => window.setTimeout(() => cb({ didTimeout: false, timeRemaining: () => 0 } as IdleDeadline), 1));
+    const cancel = typeof window.cancelIdleCallback === 'function' ? window.cancelIdleCallback : window.clearTimeout;
+    const handle = idle(() => {
+      void import('./CropEditor');
+      void import('./FilmCarousel');
+      void import('./Export');
+      void import('./Remove');
+      void import('./RefineEdge');
+    });
+    return () => cancel(handle);
+  }, []);
+
   const previewParams = useMemo(
     () => picking && focusPreview ? { ...state.params, lensFocusX: focusPreview.x, lensFocusY: focusPreview.y } : state.params,
     [picking, focusPreview, state.params],
@@ -167,60 +194,88 @@ export function Editor({ state, wide, landscape, onOpenFile, onToast, onError }:
   const [pickingWb, setPickingWb] = useState(false);
   const [wbBusy, setWbBusy] = useState(false);
   useEffect(() => setPickingWb(false), [group, state.fileName]);
-  const runWhiteBalance = async (at?: { x: number; y: number }) => {
+  // Ref pola `useEvent`: callback stabil yang selalu membaca state terbaru.
+  // Dipakai supaya identitas `ctx`/handler tidak berganti tiap render --
+  // komponen memo di bawah hanya bangun ulang bila NILAINYA berubah.
+  // `engine` modul tunggal: `engine.getState().params` SELALU sama dengan
+  // `state.params` di sini (sumber yang sama), jadi perilaku identik.
+  const paramsRef = useRef(state.params);
+  paramsRef.current = state.params;
+  const wbRef = useRef({ onToast, onError });
+  wbRef.current = { onToast, onError };
+  const runWhiteBalance = useCallback(async (at?: { x: number; y: number }) => {
     setWbBusy(true);
     try {
       const ok = await engine.whiteBalance(at);
-      if (!ok) onToast(at ? 'Pick something white or grey that isn’t blown out' : 'No neutral colour found for Auto');
+      if (!ok) wbRef.current.onToast(at ? 'Pick something white or grey that isn’t blown out' : 'No neutral colour found for Auto');
     } catch (error) {
-      onError(error);
+      wbRef.current.onError(error);
     } finally {
       setWbBusy(false);
     }
-  };
+  }, []);
+  const runWhiteBalanceRef = useRef(runWhiteBalance);
+  runWhiteBalanceRef.current = runWhiteBalance;
+  const onPatch = useCallback(
+    (patch: Partial<RenderParams>) => engine.setParams(normalizePatch(paramsRef.current, patch)), []);
+  const onOpenList = useCallback((tool: ChoiceTool) => setSheet({ kind: 'list', toolId: tool.id }), []);
+  const onPickWb = useCallback(() => setPickingWb((on) => !on), []);
+  const onAutoWb = useCallback(() => { setPickingWb(false); void runWhiteBalanceRef.current(); }, []);
+  const onDownloadDepth = useCallback(() => engine.downloadDepth(), []);
+  const onRetryDepth = useCallback(() => engine.retryDepth(), []);
+  const onDepthModel = useCallback((model: DepthModelId) => engine.setDepthModel(model), []);
+  const onDepthGpu = useCallback((on: boolean) => engine.setDepthGpu(on), []);
+  const onRefineDepth = useCallback(() => setSheet({ kind: 'refine' }), []);
 
-  const ctx: ToolContext = {
+  const ctx: ToolContext = useMemo(() => ({
     params: previewParams,
     defaults: state.defaults,
-    onPatch: (patch) => engine.setParams(normalizePatch(state.params, patch)),
+    onPatch,
     onInteractionChange: engine.setInteracting,
-    onOpenList: (tool) => setSheet({ kind: 'list', toolId: tool.id }),
+    onOpenList,
     whiteBalance: {
       picking: pickingWb,
       busy: wbBusy,
-      onPick: () => setPickingWb((on) => !on),
-      onAuto: () => { setPickingWb(false); void runWhiteBalance(); },
+      onPick: onPickWb,
+      onAuto: onAutoWb,
     },
     lens: {
       depth: state.depth,
       aspect: state.frame ? state.frame.width / state.frame.height : 1.5,
-      onDownload: () => engine.downloadDepth(),
-      onRetry: () => engine.retryDepth(),
+      onDownload: onDownloadDepth,
+      onRetry: onRetryDepth,
       model: state.depthModel,
       models: state.depthModels,
       experimental: state.depthExperimental,
-      onModel: (model) => engine.setDepthModel(model),
+      onModel: onDepthModel,
       gpu: state.depthGpu,
       gpuOption: state.depthGpuOption,
-      onGpu: (on) => engine.setDepthGpu(on),
+      onGpu: onDepthGpu,
       refined: !!engine.refine,
-      onRefine: () => setSheet({ kind: 'refine' }),
+      onRefine: onRefineDepth,
     },
-  };
+  }), [previewParams, state.defaults, state.depth, state.frame, state.depthModel, state.depthModels,
+    state.depthExperimental, state.depthGpu, state.depthGpuOption,
+    onPatch, onOpenList, onPickWb, onAutoWb, onDownloadDepth, onRetryDepth, onDepthModel, onDepthGpu, onRefineDepth,
+    pickingWb, wbBusy]);
 
-  const openStocks = (stockKind: StockKind = 'film') => {
-    const current = stocksOf(state.params);
+  const openStocks = useCallback((stockKind: StockKind = 'film') => {
+    const current = stocksOf(paramsRef.current);
     setSheet({ kind: 'stocks', stockKind, before: current, swap: current });
-  };
+  }, []);
 
   // Proyek tersimpan otomatis: menutup foto tidak membuang apa pun.
-  const onClose = () => {
+  const onClose = useCallback(() => {
     // Foto terbang kembali ke bilahnya di Recent (PhotoFlight).
     launchClose(projects.getState().currentId);
     void projects.close();
-  };
+  }, []);
 
-  const onProcess = (process: string) => engine.setParams(choicePatch(findTool('process') as ChoiceTool, process, state.params));
+  const onProcess = useCallback((process: string) =>
+    engine.setParams(choicePatch(findTool('process') as ChoiceTool, process, paramsRef.current)), []);
+  /** Pemilih stok sidebar/daftar: `params` terbaru dari ref (identitas stabil). */
+  const onPickStock = useCallback(
+    (kind: StockKind, id: string) => engine.setParams(stockPatch(kind, id, paramsRef.current)), []);
 
   // Pintasan keyboard. Nilai terbaru lewat ref supaya pendengar dipasang sekali.
   const keys = useRef({ hasPhoto, removing, onOpenFile, toggleCompare: () => {}, openExport: () => {}, toggleScope: () => {}, openCrop: () => {} });
@@ -356,14 +411,22 @@ export function Editor({ state, wide, landscape, onOpenFile, onToast, onError }:
     />
   );
 
-  const groupItems: TabItem<GroupId>[] = GROUPS.map((g) => ({
-    value: g.id,
-    label: g.label,
-    icon: g.icon,
-    edited: hasPhoto && visibleTools(g, state.params).some((t) => isModified(t, state.params, state.defaults)),
-  }));
+  // `edited` per grup hanya berubah bila ada alat yang mulai/berhenti diubah:
+  // kunci boolean memungkinkan `useMemo` melewati frame seretan biasa.
+  const editedKey = hasPhoto
+    ? GROUPS.map((g) => (visibleTools(g, state.params).some((t) => isModified(t, state.params, state.defaults)) ? '1' : '0')).join('')
+    : '';
+  const groupItems: TabItem<GroupId>[] = useMemo(
+    () => GROUPS.map((g, i) => ({
+      value: g.id,
+      label: g.label,
+      icon: g.icon,
+      edited: editedKey[i] === '1',
+    })),
+    [editedKey],
+  );
 
-  const layoutProps = { scope, setScope, state, hasPhoto, ctx, group, setGroup, groupItems, toolByGroup, setToolByGroup, compare, setCompare, openStocks, onClose, photo, onOpenFile, setSheet, sidebarKind, setSidebarKind, onProcess, onMenu: setMenuAnchor, theme, setTheme, removing, modeTitle, removalControlsRef: setRemovalControls };
+  const layoutProps = { scope, setScope, state, hasPhoto, ctx, group, setGroup, groupItems, toolByGroup, setToolByGroup, compare, setCompare, openStocks, onClose, photo, onOpenFile, setSheet, sidebarKind, setSidebarKind, onProcess, onMenu: setMenuAnchor, theme, setTheme, removing, modeTitle, removalControlsRef: setRemovalControls, onPickStock };
 
   const menuActions: SheetAction[] = [
     { label: 'Crop & Rotate', icon: 'crop', shortcut: HAS_KEYBOARD ? 'C' : undefined, onSelect: () => { setMenuAnchor(null); setSheet({ kind: 'crop' }); } },
@@ -415,16 +478,26 @@ export function Editor({ state, wide, landscape, onOpenFile, onToast, onError }:
     <>
       {wide ? <WideLayout {...layoutProps} /> : <CompactLayout {...layoutProps} landscape={landscape} />}
       {sheet?.kind === 'crop' && state.frame && (
-        <CropEditor
-          frame={state.frame}
-          sourceWidth={engine.imageSize?.width ?? state.frame.width}
-          initial={state.crop}
-          onCancel={() => setSheet(null)}
-          onDone={(crop) => { engine.setCrop(crop); setSheet(null); }}
-        />
+        <Suspense fallback={null}>
+          <CropEditor
+            frame={state.frame}
+            sourceWidth={engine.imageSize?.width ?? state.frame.width}
+            initial={state.crop}
+            onCancel={() => setSheet(null)}
+            onDone={(crop) => { engine.setCrop(crop); setSheet(null); }}
+          />
+        </Suspense>
       )}
-      {refining && state.original && removalPreview && removalControls && <RefineEdgeContent original={state.original} previewTarget={removalPreview} controlsTarget={removalControls} compact={!wide} landscape={!wide && landscape} onClose={() => setSheet(null)} />}
-      {removingObject && state.original && engine.imageSize && removalPreview && removalControls && <RemoveContent original={state.original} sourceSize={engine.imageSize} previewTarget={removalPreview} controlsTarget={removalControls} compact={!wide} landscape={!wide && landscape} onClose={() => { setSheet(null); setRevealCount((n) => n + 1); }} />}
+      {refining && state.original && removalPreview && removalControls && (
+        <Suspense fallback={null}>
+          <RefineEdgeContent original={state.original} previewTarget={removalPreview} controlsTarget={removalControls} compact={!wide} landscape={!wide && landscape} onClose={() => setSheet(null)} />
+        </Suspense>
+      )}
+      {removingObject && state.original && engine.imageSize && removalPreview && removalControls && (
+        <Suspense fallback={null}>
+          <RemoveContent original={state.original} sourceSize={engine.imageSize} previewTarget={removalPreview} controlsTarget={removalControls} compact={!wide} landscape={!wide && landscape} onClose={() => { setSheet(null); setRevealCount((n) => n + 1); }} />
+        </Suspense>
+      )}
 
       <Sheet
         open={sheet?.kind === 'stocks'}
@@ -453,15 +526,17 @@ export function Editor({ state, wide, landscape, onOpenFile, onToast, onError }:
         }
       >
         {sheet?.kind === 'stocks' && carousel && (
-          <FilmCarousel
-            state={state}
-            view={viewParams}
-            onPick={(kind, id) => chooseStocks(stockPatch(kind, id, viewParams))}
-            onProcess={(process) => chooseStocks(choicePatch(findTool('process') as ChoiceTool, process, viewParams))}
-            scan={isScanMode(viewParams)}
-            onList={() => { commitPending(); setSheet({ ...sheet, list: true, stockKind: 'film', pending: undefined }); }}
-            previous={swapAction}
-          />
+          <Suspense fallback={null}>
+            <FilmCarousel
+              state={state}
+              view={viewParams}
+              onPick={(kind, id) => chooseStocks(stockPatch(kind, id, viewParams))}
+              onProcess={(process) => chooseStocks(choicePatch(findTool('process') as ChoiceTool, process, viewParams))}
+              scan={isScanMode(viewParams)}
+              onList={() => { commitPending(); setSheet({ ...sheet, list: true, stockKind: 'film', pending: undefined }); }}
+              previous={swapAction}
+            />
+          </Suspense>
         )}
         {sheet?.kind === 'stocks' && !carousel && (
           <StockBrowser
@@ -497,17 +572,19 @@ export function Editor({ state, wide, landscape, onOpenFile, onToast, onError }:
           )
         }
       >
-        <ExportContent
-          onCancel={() => setSheet(null)}
-          outputColorSpace={state.params.outputColorSpace}
-          inputColorSpace={state.params.inputColorSpace}
-          recipe={!state.params.filmEnabled ? 'Film Off · ' + offOutput(state.params) : scan ? `${film.short}, scanned` : `${film.short} on ${paper.short}`}
-          onDone={(message) => {
-            setSheet(null);
-            onToast(message);
-          }}
-          onError={onError}
-        />
+        <Suspense fallback={null}>
+          <ExportContent
+            onCancel={() => setSheet(null)}
+            outputColorSpace={state.params.outputColorSpace}
+            inputColorSpace={state.params.inputColorSpace}
+            recipe={!state.params.filmEnabled ? 'Film Off · ' + offOutput(state.params) : scan ? `${film.short}, scanned` : `${film.short} on ${paper.short}`}
+            onDone={(message) => {
+              setSheet(null);
+              onToast(message);
+            }}
+            onError={onError}
+          />
+        </Suspense>
       </Sheet>
 
       <Sheet
@@ -523,7 +600,9 @@ export function Editor({ state, wide, landscape, onOpenFile, onToast, onError }:
         }
       >
         {listTool && (
-          <ListPickerContent options={listTool.options} value={state.params[listTool.field]} onPick={(v) => engine.setParams(choicePatch(listTool, v, state.params))} />
+          <Suspense fallback={null}>
+            <ListPickerContent options={listTool.options} value={state.params[listTool.field]} onPick={(v) => engine.setParams(choicePatch(listTool, v, state.params))} />
+          </Suspense>
         )}
       </Sheet>
 
@@ -559,6 +638,8 @@ interface LayoutProps {
   setSidebarKind: (k: StockKind) => void;
   onProcess: (process: string) => void;
   onMenu: (anchor: DOMRect) => void;
+  /** Pemilih stok sidebar (identitas stabil; `params` dari ref di Editor). */
+  onPickStock: (kind: StockKind, id: string) => void;
   /** Tampilan: sistem, terang, gelap (theme.ts). */
   theme: ThemePref;
   setTheme: (theme: ThemePref) => void;
@@ -895,7 +976,7 @@ const INSPECTOR_WIDTH = 300;
  * Resep sebagai path control jendela ("Portra 400 › Portra Endura"): tiap
  * segmen membuka daftarnya di sidebar dan menggulir ke stok terpilih.
  */
-function RecipePath({ state, onReveal, disabled }: { state: EngineState; onReveal: (kind: StockKind) => void; disabled: boolean }) {
+function RecipePathInner({ state, onReveal, disabled }: { state: EngineState; onReveal: (kind: StockKind) => void; disabled: boolean }) {
   const film = stockInfo(state.params.film);
   const paper = stockInfo(state.params.paper);
   const scan = isScanMode(state.params);
@@ -911,6 +992,14 @@ function RecipePath({ state, onReveal, disabled }: { state: EngineState; onRevea
     </nav>
   );
 }
+
+/** Di-memo: label resep hanya bergantung pada 4 field resep + `onReveal` stabil. */
+export const RecipePath = memo(RecipePathInner, (prev, next) =>
+  prev.disabled === next.disabled && prev.onReveal === next.onReveal
+  && prev.state.params.film === next.state.params.film
+  && prev.state.params.paper === next.state.params.paper
+  && prev.state.params.filmEnabled === next.state.params.filmEnabled
+  && prev.state.params.process === next.state.params.process);
 
 /**
  * Scope di inspector (desktop): menempel di bawah daftar parameter, di atas
@@ -1011,14 +1100,14 @@ function ScopePanel({ state, scope, setScope }: { state: EngineState; scope: Sco
   );
 }
 
-function WideLayout({ theme, setTheme, scope, setScope, state, hasPhoto, ctx, group, setGroup, groupItems, compare, setCompare, onClose, photo, onOpenFile, setSheet, sidebarKind, setSidebarKind, onProcess, removing, modeTitle, removalControlsRef }: LayoutProps) {
+function WideLayout({ theme, setTheme, scope, setScope, state, hasPhoto, ctx, group, setGroup, groupItems, compare, setCompare, onClose, photo, onOpenFile, setSheet, sidebarKind, setSidebarKind, onProcess, onPickStock, removing, modeTitle, removalControlsRef }: LayoutProps) {
   const currentGroup = GROUPS.find((g) => g.id === group)!;
   const edited = engine.isEdited();
   const [reveal, setReveal] = useState(0);
-  const onReveal = (kind: StockKind) => {
+  const onReveal = useCallback((kind: StockKind) => {
     setSidebarKind(kind);
     setReveal((n) => n + 1);
-  };
+  }, [setSidebarKind]);
   const inert = !hasPhoto || removing || state.phase === 'opening';
   const dim: React.CSSProperties = { opacity: hasPhoto ? 1 : EMPTY_OPACITY, transition: 'opacity 0.2s' };
   return (
@@ -1073,13 +1162,13 @@ function WideLayout({ theme, setTheme, scope, setScope, state, hasPhoto, ctx, gr
       </header>
 
       <nav aria-label="Stocks" className="panel editor-frost" inert={inert} style={{ ...dim, borderRight: '1px solid var(--hairline)', display: 'flex', flexDirection: 'column', minHeight: 0, paddingTop: 10 }}>
-        <StockBrowser
+        <MemoStockBrowser
           film={state.params.film}
           filmEnabled={state.params.filmEnabled}
           paper={state.params.paper}
           kind={sidebarKind}
           onKindChange={setSidebarKind}
-          onPick={(kind, id) => engine.setParams(stockPatch(kind, id, state.params))}
+          onPick={onPickStock}
           scan={isScanMode(state.params)}
           process={state.params.process}
           onProcess={onProcess}

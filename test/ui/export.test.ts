@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { exportSizeLimits, longEdgeDetents } from '../../src/ui/model/exportSizes';
 import { asciiName, exportFileName, formatBytes } from '../../src/ui/share';
 import { rgbToRgba8, clampQuality } from '../../src/io/canvasEncode';
+import { quantize } from '../../src/io/encode';
+import type { RgbPixels } from '../../src/io/encode';
 
 describe('detent sisi panjang ekspor', () => {
   it('hanya detent yang memperkecil, lalu Source', () => {
@@ -55,5 +57,37 @@ describe('encoder kanvas', () => {
     expect(clampQuality(0)).toBe(0.01);
     expect(clampQuality(1.5)).toBe(1);
     expect(clampQuality(Number.NaN)).toBe(1);
+  });
+
+  it('identik byte demi byte dengan quantize 8-bit untuk setiap tipe masukan', () => {
+    // Referensi: implementasi lama (quantize lalu salin ke RGBA).
+    const reference = (rgb: RgbPixels, n: number): number[] => {
+      const q = quantize(rgb.subarray(0, n * 3), 8);
+      const out: number[] = [];
+      for (let i = 0, j = 0; i < n; i += 1, j += 3) out.push(q[j]!, q[j + 1]!, q[j + 2]!, 255);
+      return out;
+    };
+    const n = 60_000;
+    let seed = 0x9e3779b9;
+    const next = () => {
+      seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5;
+      return (seed >>> 0) / 4294967296;
+    };
+    const values = new Float32Array(n * 3);
+    const special = [0, -0, 1, 1.5, -1, -0.0001, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY];
+    for (let i = 0; i < n * 3; i += 1) {
+      // Sepertiga nilai acak, sepertiga tepat di sekitar batas .5 LSB, sisanya khusus.
+      const kind = i % 3;
+      if (kind === 0) values[i] = next();
+      else if (kind === 1) values[i] = (Math.floor(next() * 256) + 0.5) / 255 + (next() - 0.5) * 1e-15;
+      else values[i] = special[(i / 3) % special.length]!;
+    }
+    expect([...rgbToRgba8(values, n, 1)]).toEqual(reference(values, n));
+
+    const bytes = new Uint8Array(n * 3);
+    const words = new Uint16Array(n * 3);
+    for (let i = 0; i < n * 3; i += 1) { bytes[i] = Math.floor(next() * 256); words[i] = Math.floor(next() * 65_536); }
+    expect([...rgbToRgba8(bytes, n, 1)]).toEqual(reference(bytes, n));
+    expect([...rgbToRgba8(words, n, 1)]).toEqual(reference(words, n));
   });
 });

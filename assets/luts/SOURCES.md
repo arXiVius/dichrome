@@ -26,6 +26,11 @@ sample count and finite values. A load failure surfaces as a render error;
 the next render can retry. DICHROIC tests GPU results against independent
 CPU Cineon/tetrahedral calculations; this does not measure fidelity to real film.
 
+These `.cube` sources are not shipped to the browser. `tools/bake-print-luts.mjs`
+bakes them into `public/luts/<name>.f32` (RGB float32 little-endian, no header,
+alpha = 1 synthesized at load) — bit-identical to `parsePrintCube` on this text,
+verified byte-for-byte by `test/printLut.test.ts`.
+
 Implementation: camera/input decoding and controls → linear Rec.709 primaries
 → Cineon (95 black, 685 reference white, 300 codes/decade) → original cube,
 with tetrahedral interpolation → gamma 2.4 decoding → chosen output primaries

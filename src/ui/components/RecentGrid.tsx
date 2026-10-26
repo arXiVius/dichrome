@@ -21,7 +21,7 @@ const HOLD_SLOP = 10;
 /** Rasio ubin dijepit supaya panorama/potret ekstrem tetap enak dilihat. */
 const clampAspect = (r: number) => Math.min(1.8, Math.max(0.56, r));
 
-export function RecentGrid({ cards, onOpen, onRelink, onMenu, onNew, onCamera, onSettings, hint }: {
+export function RecentGrid({ cards, onOpen, onRelink, onMenu, onNew, onCamera, onSettings, onAll, hint }: {
   cards: readonly ProjectCard[];
   onOpen: (card: ProjectCard) => void;
   onRelink: (card: ProjectCard) => void;
@@ -29,6 +29,8 @@ export function RecentGrid({ cards, onOpen, onRelink, onMenu, onNew, onCamera, o
   onNew: () => void;
   onCamera: () => void;
   onSettings: () => void;
+  /** Daftar lengkap (cari, grup hari, ekspor batch). */
+  onAll: () => void;
   hint?: string;
 }) {
   const scroller = useRef<HTMLDivElement>(null);
@@ -77,6 +79,7 @@ export function RecentGrid({ cards, onOpen, onRelink, onMenu, onNew, onCamera, o
         <header className="bento-header">
           <h1>Welcome back</h1>
           <span>gammā{hint ? ` · ${hint}` : ''}</span>
+          <button type="button" className="bento-all" onClick={onAll}>All Projects</button>
         </header>
         <div className="bento-grid" role="list" aria-label="Your projects" style={{ ['--cols' as string]: count }}>
           {columns.map((column, c) => (

@@ -11,9 +11,33 @@
 
 import type { DecodedImage } from '../io/decoded';
 import { decodeImage } from '../io';
-import type { MessagePortLike, RpcError, RpcRequest, RpcResponse, SessionInit, SessionLike } from './protocol';
+import type { MessagePortLike, RpcError, RpcRequest, RpcResponse, SessionInit, SessionLike, SessionMethod } from './protocol';
 import { cloneTypedArrays, transferablesOf } from './protocol';
 import { Session } from './session';
+
+/**
+ * Method yang hasilnya SEGAR: dibangkitkan per panggilan dan tidak pernah
+ * disimpan `Session`, jadi aman DITRANSFER langsung tanpa salinan (hemat
+ * satu memcpy seukuran hasil per panggilan -- `stageOpen`/`applyRemoval`
+ * bisa belasan MB: frame original + guide + pratinjau).
+ *
+ * Metode yang TIDAK tercantum (mis. `render`, yang mengembalikan objek dari
+ * cache `#cache`/`#previewCache`) tetap lewat `cloneTypedArrays`: transfer
+ * tanpa salinan akan me-detach buffer milik Session dan merusak cache-nya.
+ * Kebijakannya sengaja allowlist -- metode baru yang menghasilkan larik
+ * ter-cache ikut disalin dengan aman sampai didaftarkan di sini.
+ *
+ * Semua hasil di atas hanya berisi objek/larik SEGAR; `getParams`/
+ * `getDiagnostics`/`lastFullSize`/`renderExport`/`exportProgress`/
+ * `exportFormats`/`whiteBalance`/`exportCube` tanpa larik pun aman
+ * di-straight-clone (tanpa salinan manual ganda).
+ */
+const FRESH_RESULTS = new Set<SessionMethod | 'decode' | 'init'>([
+  'applyRemoval', 'undoRemoval', 'stageOpen', 'prepareRemoval', 'refineSource', 'whiteBalance',
+  'getParams', 'getDiagnostics', 'lastFullSize', 'renderExport', 'exportProgress', 'exportFormats',
+  'exportCube', 'prewarm', 'commitOpen', 'finishOpen', 'discardOpen', 'setParams', 'open', 'close',
+  'setDepthMap', 'releaseExport', 'dispose',
+]);
 
 export interface ServeOptions {
   /** Decoder untuk RPC `decode`; bawaan `io/decodeImage` (test menyuntik `wasmBinary` LibRaw). */
@@ -56,9 +80,11 @@ export function serveSession(
           result = await method.apply(target, request.args);
         }
         // Berkas ekspor tidak disimpan Session, jadi langsung DITRANSFER tanpa
-        // salinan (dulu satu salinan seukuran berkas per encode). Hasil lain
-        // bisa berupa array yang di-cache Session: disalin dulu.
-        const copy = request.method === 'exportImage' ? result : cloneTypedArrays(result);
+        // salinan (dulu satu salinan seukuran berkas per encode). Hasil SEGAR
+        // (allowlist di atas) juga langsung ditransfer; hasil yang di-cache
+        // Session tetap disalin dulu supaya cache tidak ter-detach.
+        const fresh = request.method === 'exportImage' || FRESH_RESULTS.has(request.method as SessionMethod);
+        const copy = fresh ? result : cloneTypedArrays(result);
         reply({ id: request.id, ok: true, result: copy }, transferablesOf(copy));
       } catch (e) {
         reply({ id: request.id, ok: false, error: serializeError(e) });

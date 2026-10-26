@@ -243,6 +243,21 @@ export class Projects {
     return true;
   }
 
+  /**
+   * Sumber ekspor batch: berkas asli + resep/crop/penghapusan tersimpan,
+   * TANPA membuka proyek atau menyentuh `updatedAt`/`currentId`. Pemanggil
+   * yang mengurus engine dan menutupnya kembali.
+   */
+  async source(id: string): Promise<{ file: File; params: RenderParams; crop?: Crop; removals: SavedRemoval[] } | undefined> {
+    await this.load();
+    const record = this.#records.get(id);
+    if (!record || !record.hasFile) return undefined;
+    const file = await this.store.file(id).catch(() => undefined);
+    if (!file) return undefined;
+    const removals = await this.store.removals(id).catch(() => [] as SavedRemoval[]);
+    return { file, params: record.params, crop: record.crop, removals };
+  }
+
   /** Berkas berikutnya dari pemilih menggantikan foto asli proyek ini (`undefined`: batal). */
   requestRelink(id: string | undefined): void {
     this.#relinkId = id;

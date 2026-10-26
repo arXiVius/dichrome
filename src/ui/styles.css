@@ -2044,3 +2044,47 @@ html[data-flight="close"] .bento-tile[data-flying] { visibility: hidden; }
 .cam-dial:focus-visible .cam-dial-ticks i[data-on] { box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.35); }
 .cam-dial-numbers { display: flex; justify-content: space-between; margin-top: 6px; font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 10px; color: rgba(235, 235, 245, 0.55); }
 .cam-dial-numbers span { width: 2px; display: flex; justify-content: center; }
+
+/* ---------------------------------------------------------------------------
+ * Export All (ui/screens/Batch.tsx): layar penuh di atas sheet dan Alert --
+ * engine membuka/menutup foto di belakangnya, jadi tidak boleh ada dialog
+ * "Opening" atau scrim yang bocor ke atasnya. Di bawah lightbox (1000).
+ */
+.batch-screen {
+  position: fixed; inset: 0; z-index: 90;
+  display: flex; flex-direction: column;
+  background: var(--bg); color: var(--label);
+}
+.batch-bar {
+  display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+  padding: max(var(--safe-top, 0px), 12px) 16px 10px;
+  border-bottom: 1px solid var(--hairline);
+}
+.batch-body {
+  flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+  padding: 16px; display: flex; flex-direction: column; gap: 18px;
+  width: 100%; max-width: 720px; margin: 0 auto;
+}
+.batch-actions {
+  display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+  padding: 12px 16px calc(var(--safe-bottom, 0px) + 16px);
+  border-top: 1px solid var(--hairline);
+  background: var(--bg);
+}
+.batch-progress { height: 4px; border-radius: 2px; background: var(--fill); overflow: hidden; flex-shrink: 0; }
+.batch-progress > span { display: block; height: 100%; background: var(--blue); transition: width 0.25s ease; }
+.batch-list { display: flex; flex-direction: column; }
+.batch-status { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 4px 0; border-bottom: 1px solid var(--hairline); }
+.batch-status:last-child { border-bottom: 0; }
+.batch-status[data-status='failed'] .batch-name { color: var(--red-text); }
+.batch-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+
+/* Tautan daftar proyek lengkap di Recent (header tidak menangkap pointer). */
+.bento-all {
+  pointer-events: auto; margin-top: 6px; padding: 4px 10px;
+  min-height: 28px; border: 0; border-radius: 999px;
+  background: transparent; color: var(--blue-text, var(--blue)); font: inherit; font-size: 13px; font-weight: 500;
+  cursor: pointer;
+}
+.bento-all:hover { background: var(--fill); }
+.bento-all:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }

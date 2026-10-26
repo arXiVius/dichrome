@@ -28,6 +28,7 @@ import { Spinner } from '../components/Overlays';
 import { formatElapsed, ThoughtLine } from '../components/ThoughtLine';
 import { engine } from '../engine/engine';
 import { previousExportCrash } from '../engine/exportTiles';
+import { DEFAULT_QUALITY, FORMAT_INFO } from '../model/exportFormats';
 import { exportSizeLimits, longEdgeDetents } from '../model/exportSizes';
 import { formatBytes, prefersShareSheet, saveViaDownload, saveViaShare } from '../share';
 
@@ -47,18 +48,7 @@ function failureOf(error: unknown, what: 'image' | 'cube'): Failure {
   };
 }
 
-const FORMAT_INFO: Record<ExportFormat, { name: string; hint: string; lossy: boolean }> = {
-  png8: { name: 'PNG 8-bit', hint: 'Lossless · every pixel as rendered', lossy: false },
-  png16: { name: 'PNG 16-bit', hint: 'Lossless · smooth gradients', lossy: false },
-  tiff16: { name: 'TIFF 16-bit', hint: 'Uncompressed · for further editing', lossy: false },
-  jpeg: { name: 'JPEG', hint: 'Lossy · smallest widely compatible file', lossy: true },
-  webp: { name: 'WebP', hint: 'Lossy · smaller than JPEG at like quality', lossy: true },
-  avif: { name: 'AVIF', hint: 'Lossy · smallest file, slowest to encode', lossy: true },
-};
 const CUBE_SIZES = [{ value: '17', label: '17' }, { value: '33', label: '33' }, { value: '65', label: '65' }] as const;
-
-/** Bawaan format lossy: tanpa artefak yang terlihat, jauh lebih kecil dari 100. */
-const DEFAULT_QUALITY = 92;
 const STORAGE_KEY = 'dichroic.export.v1';
 
 interface ExportPrefs {

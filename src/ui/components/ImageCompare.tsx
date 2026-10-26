@@ -122,9 +122,18 @@ export function useImageCompare(width: number) {
 /**
  * Potongan lapisan "before" dalam piksel lapisannya sendiri (lebar `width`,
  * tinggi `height`, belum diskalakan zoom). `scale` = zoom, karena lengkungnya
- * diukur di layar.
+ * diukur di layar. `orientation` = 'vertical' (garis vertikal, sebelum di kiri)
+ * atau 'horizontal' (garis horizontal, sebelum di atas).
  */
-export function compareCut({ p, bend }: CompareState, width: number, height: number, scale = 1): string {
+export function compareCut({ p, bend }: CompareState, width: number, height: number, scale = 1, orientation: 'vertical' | 'horizontal' = 'vertical'): string {
+  if (orientation === 'horizontal') {
+    /* garis horizontal: sebelum di atas, sesudah di bawah. Lengkung mengikuti
+       posisi Y p dengan benturan bend di ujung kiri/kanan. */
+    const y = p * height;
+    const b = bend / scale;
+    const left = y - b;
+    return `path("M 0 0 L ${width} 0 Q ${width / 2} ${left + b} ${width} ${left} L ${width} ${height} Z")`;
+  }
   /* the line as a curve: ends at x - bend, and a control point at
      x + bend so the curve passes exactly through the knob */
   const x = p * width;
@@ -136,6 +145,7 @@ export function compareCut({ p, bend }: CompareState, width: number, height: num
 /**
  * Garis, knob, dan label Before/After. Mengisi kotak induknya (`bounds`);
  * `photo` = posisi foto di kotak itu sekarang (ikut zoom/geser).
+ * `orientation` = 'vertical' (default) atau 'horizontal'.
  */
 export function ImageCompare({
   state,
@@ -143,11 +153,13 @@ export function ImageCompare({
   bounds,
   /* show the Before and After tags */
   labels = true,
+  orientation = 'vertical',
 }: {
   state: CompareState;
   photo: { x: number; y: number; width: number; height: number };
   bounds: { width: number; height: number };
   labels?: boolean;
+  orientation?: 'vertical' | 'horizontal';
 }) {
   const { p, bend, held } = state;
   const x = photo.x + p * photo.width;
@@ -160,6 +172,46 @@ export function ImageCompare({
   const right = bounds.width - Math.min(photo.x + photo.width, bounds.width) + 12;
   const tagTop = Math.max(photo.y, 0) + 12;
   const knobY = clamp((y0 + y1) / 2, 18, bounds.height - 18);
+
+  if (orientation === 'horizontal') {
+    const y = photo.y + p * photo.height;
+    const knobX = clamp((photo.x + photo.x + photo.width) / 2, 18, bounds.width - 18);
+    const by = Number(bend.toFixed(2));
+    const hCurve = `M ${photo.x} ${y - by} Q ${((photo.x + photo.x + photo.width) / 2).toFixed(2)} ${y + by} ${photo.x + photo.width} ${y - by}`;
+
+    return (
+      <div
+        className="cmp cmp-horizontal"
+        data-held={held || undefined}
+        role="slider"
+        tabIndex={0}
+        aria-label="Before and after"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.round(p * 100)}
+        aria-valuetext={`${Math.round(p * 100)}% original`}
+        onKeyDown={state.onKeyDown}
+        style={{ position: 'absolute', inset: 0, overflow: 'visible', background: 'none', '--p': p } as CSSProperties}
+      >
+        {labels && (
+          <>
+            <span className="cmp-tag cmp-top" style={{ left: tagTop, top: Math.max(photo.y, 0) + 10, opacity: clamp((p - 0.14) * 4, 0, 1) }}>Before</span>
+            <span className="cmp-tag cmp-bottom" style={{ left: tagTop, bottom: Math.max(photo.y, 0) + 10, opacity: clamp((0.86 - p) * 4, 0, 1) }}>After</span>
+          </>
+        )}
+        <svg className="cmp-line" width={bounds.width} height={bounds.height} viewBox={`0 0 ${bounds.width} ${bounds.height}`} aria-hidden="true">
+          <path d={hCurve} />
+        </svg>
+        <span className="cmp-grip cmp-grip-horizontal" style={{ top: y }}>
+          <span className="cmp-knob cmp-knob-horizontal" style={{ left: knobX }}>
+            <svg width="10" height="16" viewBox="0 0 10 16" aria-hidden="true">
+              <path d="M1 5 5 1l4 4M1 11l4 4-4 4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </span>
+        </span>
+      </div>
+    );
+  }
 
   return (
     <div

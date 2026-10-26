@@ -139,6 +139,23 @@ describe('RPC Session', () => {
     expect(Array.from(fake.lastRgb!)).toEqual([0, 0.5, 0.25]);
   });
 
+  it('hasil SEGAR (prepareRemoval) DITRANSFER apa adanya, tanpa salinan: buffer sisi worker ter-detach', async () => {
+    const fake = new FakeSession();
+    // Segar per panggilan (tidak disimpan Session): boleh ditransfer langsung.
+    const rgb = new Float32Array(3).fill(0.25);
+    const mask = new Float32Array(1).fill(1);
+    Object.assign(fake, {
+      prepareRemoval: () => ({ revision: 7, x: 0, y: 0, width: 2, height: 2, rgb, mask, transform: { space: 'sRGB', encoding: 'linear', gain: 1 } }),
+    });
+    const client = await connect(fake);
+    const crop = await client.prepareRemoval({ width: 1, height: 1, data: new Uint8Array(1) });
+    // Ter-detach di sisi server = buffer dikirim, bukan disalin (nol memcpy).
+    expect(rgb.length).toBe(0);
+    expect(mask.length).toBe(0);
+    expect(Array.from(crop.rgb)).toEqual([0.25, 0.25, 0.25]);
+    expect(crop.revision).toBe(7);
+  });
+
   it('prewarm diteruskan ke Session', async () => {
     const fake = new FakeSession();
     const client = await connect(fake);

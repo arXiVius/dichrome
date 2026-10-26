@@ -17,6 +17,16 @@
  * tsconfig paket ini adalah `ES2022`, yang mendahului method itu; memakainya
  * akan lulus di runtime Node tapi gagal `tsc -b --noEmit`. `findLastStageIndex`
  * di bawah adalah loop terbalik manual yang setara, tanpa menaikkan target lib.
+ *
+ * CACHE PER-TAHAP: slider mengubah parameter ~60×/s, dan setiap perubahan
+ * biasanya hanya mempengaruhi satu tahap dan tahap-tahap sesudahnya. Tiap
+ * `Stage` karena itu boleh memberi `paramHash`; `runSingleBuffer` menghitung
+ * hash semua tahap sampai `collect`, mencari checkpoint TERAKHIR yang masih
+ * bersih, lalu menyalin buffer checkpoint itu ke `front` dan baru menjalankan
+ * tahap sesudahnya -- tahap hulu yang tidak berubah tidak didispatch sama
+ * sekali. Checkpoint adalah buffer GPU seukuran frame, jadi jumlahnya dibatasi
+ * (`CHECKPOINT_BUDGET_BYTES`/`CHECKPOINT_MAX_STAGES`); tahap yang tidak muat
+ * hanya berarti render penuh, tidak pernah piksel yang salah.
  */
 
 import type { DiffusionFilterConfig } from '../host/diffusionFilter';
@@ -155,6 +165,98 @@ export interface Stage {
    */
   spatialRadiusPx?: number | ((params: CoreParams, frame: Readonly<FrameParams>) => number);
   encode(encoder: GPUCommandEncoder, ctx: StageContext): void;
+  /**
+   * Optional parameter hash/key for incremental stage caching.
+   * Return a string or number that uniquely represents this stage's inputs/parameters.
+   */
+  paramHash?: (params: CoreParams, frame: Readonly<FrameParams>) => string | number;
+}
+
+/**
+ * Resolves the parameter signature for a stage, using the stage's custom `paramHash`
+ * method if defined, or falling back to built-in parameter signatures for known
+ * engine stage names. Returns undefined for unknown stages (which marks them always dirty).
+ */
+export function getStageParamHash(
+  stage: Stage,
+  params: CoreParams,
+  frame: Readonly<FrameParams>,
+): string | undefined {
+  if (stage.paramHash !== undefined) {
+    return String(stage.paramHash(params, frame));
+  }
+  const name = stage.name;
+  if (name === 'materializeActiveRegion') {
+    return `mat:${params.width}x${params.height}:${params.activeOriginX},${params.activeOriginY},${params.activeWidth},${params.activeHeight}`;
+  }
+  if (name === 'softenDetail') {
+    const s = frame.softenDetail;
+    return `soft:${params.width}x${params.height}:${params.fullWidth}x${params.fullHeight}:${s?.amount ?? 0}:${s?.luma ? s.luma.join(',') : ''}`;
+  }
+  if (name === 'natural') {
+    const n = frame.natural;
+    return `nat:${params.width}x${params.height}:${params.fullWidth}x${params.fullHeight}:${params.tileOriginX},${params.tileOriginY}:${n?.amount}:${n?.gain}:${n?.logMean}`;
+  }
+  if (name === 'filmExposure' || name === 'cameraLinear') {
+    let cam = '';
+    if (frame.camera) {
+      for (let i = 0; i < frame.camera.length; i++) cam += frame.camera[i] + ',';
+    }
+    return `filmExp:${name}:${params.filmExposureEv}:${params.filmGamma}:${params.inputColorSpace}:${params.rgbToRawMethod}:${params.colorDecodeMin}:${params.colorDecodeMax}:${params.slot0}:${params.slot1}:${frame.inputDecodeScale ?? 1}:${cam}`;
+  }
+  if (name.startsWith('neutralFilm:')) {
+    let nHash = '';
+    if (frame.neutralFilm) {
+      for (let i = 0; i < frame.neutralFilm.length; i++) nHash += frame.neutralFilm[i] + ',';
+    }
+    return `${name}:${nHash}:${params.hanatosWidth}:${params.hanatosHeight}`;
+  }
+  if (name === 'lensBlur') {
+    const l = frame.lens;
+    if (!l) return undefined;
+    return `lens:${params.width}x${params.height}:${l.focusDisparity}:${l.cocScalePx}:${l.maxCocPx}:${l.nearDisparity}:${l.foreground}:${l.bladeCurvature}:${l.catEye}:${l.blades}:${l.depth.width}x${l.depth.height}`;
+  }
+  if (name.startsWith('diffusion:')) {
+    const site = name.includes('camera') ? 'camera' : 'print';
+    const conf = site === 'camera' ? frame.cameraDiffusion : frame.printDiffusion;
+    return `diff:${name}:${params.width}x${params.height}:${frame.filmFormatMm}:${conf?.family}:${conf?.strength}:${conf?.spatialScale}`;
+  }
+  if (name === 'halation') {
+    return `hal:${frame.halationEnabled !== false}:${frame.halationAmount ?? 1}:${frame.filmFormatMm}:${params.slot1}`;
+  }
+  if (name === 'curveDevelop') {
+    return `curve:${params.filmPushPullMode}:${params.filmPushPullStops}:${params.slot1}:${params.filmGamma}`;
+  }
+  if (name === 'dir') {
+    return `dir:${frame.dirCouplersAmount ?? 1}:${frame.dirInhibitionSameLayer ?? 1}:${frame.dirInhibitionInterlayer ?? 1}:${frame.dirDiffusionUm ?? 20}:${frame.filmFormatMm}`;
+  }
+  if (name === 'grain') {
+    return `grain:${frame.grainSeed ?? 1}:${frame.grainAmount ?? 1}:${frame.filmFormatMm}`;
+  }
+  if (name === 'printScan:expose') {
+    return `pExp:${frame.printExposure ?? 1}:${frame.printExposureCompensation ?? false}:${frame.exposureCompensationEv ?? 0}:${frame.preflashExposure ?? 0}:${frame.preflashMFilterShift ?? 0}:${frame.preflashYFilterShift ?? 0}:${params.slot1}:${params.filmGamma}`;
+  }
+  if (name === 'printScan:develop') {
+    return `pDev:${params.slot1}`;
+  }
+  if (name.startsWith('printLut:')) {
+    let co = '';
+    if (frame.cameraOutput) {
+      for (let i = 0; i < frame.cameraOutput.length; i++) co += frame.cameraOutput[i] + ',';
+    }
+    return `${name}:${co}`;
+  }
+  if (name === 'cameraOutput') {
+    let co = '';
+    if (frame.cameraOutput) {
+      for (let i = 0; i < frame.cameraOutput.length; i++) co += frame.cameraOutput[i] + ',';
+    }
+    return `camOut:${co}`;
+  }
+  if (name.startsWith('scannerPost:')) {
+    return `scanPost:${frame.scannerUnsharpAmount ?? 0.7}:${frame.glarePercent ?? 0.03}:${params.slot1}`;
+  }
+  return undefined;
 }
 
 /**
@@ -395,6 +497,27 @@ export function returnFreedMemory(device: GPUDevice): void {
   }
 }
 
+/**
+ * Batas memori cache checkpoint per-tahap (`RenderGraph.stageCheckpoints`).
+ *
+ * Setiap checkpoint adalah SATU buffer GPU seukuran frame (16 B/piksel), jadi
+ * cache "semua tahap" pada pratinjau 2048x1366 adalah ~490 MiB buffer yang
+ * ditahan terus-menerus -- lebih besar daripada anggaran pratinjau perangkat
+ * itu sendiri, dan justru pada kasus (zoom tinggi) yang paling butuh memori.
+ * Batasnya dinyatakan dalam byte DAN jumlah tahap; yang pertama tercapai
+ * menang.
+ *
+ * Yang disimpan adalah checkpoint tahap PALING AWAL: checkpoint tahap c juga
+ * membuat setiap perubahan pada tahap > c melanjutkan dari c+1 (bukan dari 0),
+ * jadi N checkpoint awal menutup semua perubahan hilir dengan N tahap yang
+ * tidak perlu dihitung ulang -- per byte, itu cakupan terluas. Konsekuensinya
+ * perubahan hilir (mis. exposure print) melewati sebagian, bukan hampir semua,
+ * tahap saat frame-nya besar; frame pratinjau biasa (<= 1 MP, 16 MiB) tetap
+ * memuat semua 8.
+ */
+const CHECKPOINT_BUDGET_BYTES = 128 * 1024 * 1024;
+const CHECKPOINT_MAX_STAGES = 8;
+
 export class RenderGraph {
   private readonly stages: Stage[] = [];
   /**
@@ -404,6 +527,10 @@ export class RenderGraph {
    */
   private readonly pool: ScratchPool;
   private readonly ownsPool: boolean;
+  private readonly stageCheckpoints = new Map<number, { buffer: GPUBuffer; paramHash: string; bytes: number }>();
+  private lastInputRef: Float32Array | null = null;
+  private lastWidth = 0;
+  private lastHeight = 0;
   #disposed = false;
 
   constructor(
@@ -416,6 +543,24 @@ export class RenderGraph {
 
   addStage(stage: Stage): void {
     this.stages.push(stage);
+  }
+
+  /** Byte dan jumlah checkpoint yang sedang dipegang (pengujian, diagnosis memori). */
+  get checkpointUsage(): { count: number; bytes: number } {
+    let bytes = 0;
+    for (const cp of this.stageCheckpoints.values()) bytes += cp.bytes;
+    return { count: this.stageCheckpoints.size, bytes };
+  }
+
+  /** Clear all cached stage outputs. */
+  clearStageCheckpoints(): void {
+    for (const cp of this.stageCheckpoints.values()) {
+      cp.buffer.destroy();
+    }
+    this.stageCheckpoints.clear();
+    this.lastInputRef = null;
+    this.lastWidth = 0;
+    this.lastHeight = 0;
   }
 
   /**
@@ -452,6 +597,10 @@ export class RenderGraph {
        * 24 MP) yang dulu dibuat lalu dibuang. Baku `rgba`.
        */
       output?: 'rgba' | 'rgb';
+      /**
+       * Opsional: matikan cache inkremental antar-tahap (default aktif untuk full-frame).
+       */
+      incrementalCache?: boolean;
     },
   ): Promise<Float32Array> {
     const frame = options?.frame ?? DEFAULT_FRAME;
@@ -464,7 +613,7 @@ export class RenderGraph {
         return this.runTiled(input, params, collect, tiles, frame, output);
       }
     }
-    return this.runSingleBuffer(input, params, collect, false, frame, output);
+    return this.runSingleBuffer(input, params, collect, false, frame, output, undefined, undefined, options?.incrementalCache);
   }
 
   /**
@@ -619,6 +768,7 @@ export class RenderGraph {
     readRegion?: ActiveRect,
     /** Tujuan RGB yang dipakai ulang (hanya `output: 'rgb'`); hasil = subarray-nya. */
     rgbInto?: Float32Array,
+    incrementalCache = true,
   ): Promise<Float32Array> {
     if (this.#disposed) {
       throw new Error(
@@ -657,6 +807,57 @@ export class RenderGraph {
     const { device } = this.engine;
     const bytes = input.byteLength;
 
+    const enableIncremental = !shrinkApron && incrementalCache && !readRegion;
+
+    if (this.lastWidth !== params.width || this.lastHeight !== params.height) {
+      this.clearStageCheckpoints();
+      this.lastWidth = params.width;
+      this.lastHeight = params.height;
+    }
+
+    const inputDirty = this.lastInputRef !== input;
+    if (inputDirty) {
+      this.lastInputRef = input;
+    }
+
+    // Evaluasi status dirty per-tahap
+    const isDirty: boolean[] = new Array(stopAt + 1);
+    const hashes: (string | undefined)[] = new Array(stopAt + 1);
+
+    for (let i = 0; i <= stopAt; i += 1) {
+      const stage = this.stages[i]!;
+      const hash = enableIncremental ? getStageParamHash(stage, params, frame) : undefined;
+      hashes[i] = hash;
+
+      const inputIsDirty = i === 0 ? inputDirty : isDirty[i - 1]!;
+      if (hash === undefined) {
+        isDirty[i] = true;
+      } else {
+        const cp = this.stageCheckpoints.get(i);
+        const selfIsDirty = !cp || cp.paramHash !== hash;
+        isDirty[i] = inputIsDirty || selfIsDirty;
+      }
+    }
+
+    // Cari tahap terdepan yang bersih dan memiliki checkpoint yang tersimpan
+    let resumeFromStage = 0;
+    if (enableIncremental) {
+      for (let c = stopAt - 1; c >= 0; c -= 1) {
+        if (!isDirty[c] && this.stageCheckpoints.has(c)) {
+          resumeFromStage = c + 1;
+          break;
+        }
+      }
+      // Tahap DIR coupler (OP_RESOLVE) membaca log_e_film dari ctx.dest (back),
+      // yang dipertahankan hanya jika tahap develop tepat sebelumnya dieksekusi.
+      // Jadi bila graf perlu menjalankan DIR, eksekusi tidak boleh mulai langsung di DIR,
+      // melainkan dari tahap develop (dirIndex - 1) atau sebelumnya.
+      const dirIndex = this.stages.findIndex((s) => s.name === 'dir');
+      if (dirIndex !== -1 && resumeFromStage === dirIndex && dirIndex <= stopAt) {
+        resumeFromStage = Math.max(0, dirIndex - 1);
+      }
+    }
+
     // Keep the largest preview's frame buffers for the next render. Repeated
     // create/destroy cycles on iOS WebGPU can raise GPU-process memory pressure
     // during film/paper changes; the pool grows only when resolution grows.
@@ -669,18 +870,27 @@ export class RenderGraph {
     try {
       let front = this.pool.getFrame('ping', bytes);
       let back = this.pool.getFrame('pong', bytes);
-      // `input.buffer` bertipe `ArrayBufferLike` (bisa `SharedArrayBuffer`) di
-      // definisi lib TS terbaru, sementara `writeBuffer` mensyaratkan
-      // `ArrayBuffer` non-shared. `input` di sini SELALU `Float32Array` biasa
-      // yang pemanggil bangun sendiri (lih. graph.test.ts) — tidak pernah
-      // shared — jadi cast ini menyempitkan tipe, bukan mengubah perilaku.
-      device.queue.writeBuffer(
-        front,
-        0,
-        input.buffer as ArrayBuffer,
-        input.byteOffset,
-        input.byteLength,
-      );
+
+      const encoder = device.createCommandEncoder({ label: 'graph' });
+
+      if (resumeFromStage > 0) {
+        // Melanjutkan dari checkpoint tahap sebelumnya: lewati tahapan upstream
+        const sourceCheckpoint = this.stageCheckpoints.get(resumeFromStage - 1)!;
+        encoder.copyBufferToBuffer(sourceCheckpoint.buffer, 0, front, 0, bytes);
+      } else {
+        // `input.buffer` bertipe `ArrayBufferLike` (bisa `SharedArrayBuffer`) di
+        // definisi lib TS terbaru, sementara `writeBuffer` mensyaratkan
+        // `ArrayBuffer` non-shared. `input` di sini SELALU `Float32Array` biasa
+        // yang pemanggil bangun sendiri (lih. graph.test.ts) — tidak pernah
+        // shared — jadi cast ini menyempitkan tipe, bukan mengubah perilaku.
+        device.queue.writeBuffer(
+          front,
+          0,
+          input.buffer as ArrayBuffer,
+          input.byteOffset,
+          input.byteLength,
+        );
+      }
 
       const paramsBuffer = allocate({
         label: 'coreParams',
@@ -713,22 +923,7 @@ export class RenderGraph {
         height: params.activeHeight,
       };
 
-      // Task 19b: uniform buffer CoreParams KECIL per tahap, dipakai HANYA
-      // saat `shrinkApron` (satu per tahap 0..stopAt, active rect BERBEDA
-      // tiap tahap) -- lih. dokumentasi `Stage.spatialRadiusPx` untuk kenapa
-      // ini HARUS buffer terpisah (bukan menulis ulang `paramsBuffer` yang
-      // sama berkali-kali): `queue.writeBuffer` berkali-kali ke SATU buffer
-      // sebelum SATU `submit()` di akhir fungsi ini akan membuat hanya
-      // penulisan TERAKHIR yang terlihat GPU untuk SELURUH command buffer
-      // (semua penulisan itu terjadi sebelum submit manapun dieksekusi) --
-      // menulis ke buffer BARU per tahap sepenuhnya aman terlepas urutan itu,
-      // karena tiap buffer hanya ditulis SEKALI, sebelum `submit()` mana pun.
-      // Dikumpulkan di sini untuk di-`destroy()` setelah `submit()`, bukan
-      // sebelumnya (destroy sebelum GPU selesai memakainya adalah use-after-
-      // destroy).
-
-      const encoder = device.createCommandEncoder({ label: 'graph' });
-      for (let i = 0; i <= stopAt; i += 1) {
+      for (let i = resumeFromStage; i <= stopAt; i += 1) {
         const stage = this.stages[i]!;
         let stageParams = params;
         let stageParamsBuffer = paramsBuffer;
@@ -775,12 +970,40 @@ export class RenderGraph {
           },
         });
         // Ping-pong: keadaan yang baru ditulis tahap ini (ke `dest`/`back`)
-        // menjadi `source` tahap berikutnya. Menghilangkan baris ini membuat
-        // setiap tahap membaca ulang buffer masukan asli yang tak tersentuh —
-        // graph.test.ts membuktikan ini lewat tahap yang MENGUBAH nilai
-        // (bukan sekadar menyalinnya), sehingga hasil akhir yang salah
-        // benar-benar terlihat, bukan cuma kebetulan identik dengan input.
+        // menjadi `source` tahap berikutnya.
         [front, back] = [back, front];
+
+        // Simpan checkpoint untuk tahap yang di-cache, sampai batas memori
+        // (lih. `CHECKPOINT_BUDGET_BYTES`). Tahap yang tidak tercakup tetap
+        // benar: cache hanya melewati tahap bila checkpoint-nya ada.
+        if (enableIncremental && hashes[i] !== undefined &&
+          (this.stageCheckpoints.has(i) ||
+            (this.stageCheckpoints.size < CHECKPOINT_MAX_STAGES &&
+              this.checkpointUsage.bytes + bytes <= CHECKPOINT_BUDGET_BYTES))) {
+          let cp = this.stageCheckpoints.get(i);
+          if (!cp || cp.bytes < bytes) {
+            if (cp) cp.buffer.destroy();
+            const buffer = device.createBuffer({
+              label: `cache:${stage.name}:${i}`,
+              size: bytes,
+              usage: gpuBufferUsage.STORAGE | gpuBufferUsage.COPY_SRC | gpuBufferUsage.COPY_DST,
+            });
+            cp = { buffer, paramHash: hashes[i]!, bytes };
+            this.stageCheckpoints.set(i, cp);
+          } else {
+            cp.paramHash = hashes[i]!;
+          }
+          encoder.copyBufferToBuffer(front, 0, cp.buffer, 0, bytes);
+        }
+      }
+
+      // Hapus checkpoint downstream setelah stopAt yang sudah basi
+      for (let i = stopAt + 1; i < this.stages.length; i += 1) {
+        const cp = this.stageCheckpoints.get(i);
+        if (cp) {
+          cp.buffer.destroy();
+          this.stageCheckpoints.delete(i);
+        }
       }
 
       const readPixels = readRegion ? readRegion.width * readRegion.height : params.width * params.height;
@@ -803,6 +1026,7 @@ export class RenderGraph {
     } catch (error) {
       // Failed allocations/readbacks must not pin a partial frame in the
       // reusable pool. Successful frames retain their normal reuse path.
+      this.clearStageCheckpoints();
       this.pool.release();
       this.releaseFrameResources();
       throw error;
@@ -814,17 +1038,16 @@ export class RenderGraph {
   }
 
   /**
-   * Menghancurkan seluruh buffer pada pool scratch. Panggil setelah benar-
-   * benar selesai dengan graf ini (mis. akhir sesi render setelah seluruh
-   * tile Task 19 selesai) — BUKAN di antara tile, yang justru meniadakan
-   * tujuan pool (lih. dokumentasi `StageContext.scratch`). Idempoten.
+   * Menghancurkan seluruh buffer pada pool scratch dan cache tahap.
    */
   releaseFrameResources(): void {
+    this.clearStageCheckpoints();
     for (const stage of this.stages) stage.releaseFrameResources?.();
   }
 
   dispose(): void {
     if (this.#disposed) return;
+    this.clearStageCheckpoints();
     for (const stage of this.stages) stage.dispose?.();
     // Pool bersama milik pemanggil (`Session`), yang melepasnya sendiri.
     if (this.ownsPool) this.pool.release();

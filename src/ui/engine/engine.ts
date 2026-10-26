@@ -23,6 +23,7 @@ import type { ExportFormat, ExportOptions, ExportProgress } from '../../session/
 import type { ExportTarget } from '../../session/exportTarget';
 import { isScanMode, suggestedInput } from '../model/tools';
 import { stockInfo } from '../model/stocks';
+import { EXPORT_EXT, EXPORT_MIME } from '../model/exportFormats';
 import { exportFileName } from '../share';
 import { decodeWithBrowser, isBrowserImage } from './browserDecode';
 import { finishExportEncode, finishExportTiles, noteExportStage, rememberExportTiles, startExportEncode, startExportTiles } from './exportTiles';
@@ -257,22 +258,7 @@ function withExif(image: DecodedImage, bytes: Uint8Array): DecodedImage {
   return exif ? { ...image, exif } : image;
 }
 
-export const EXPORT_MIME: Record<ExportFormat, string> = {
-  png8: 'image/png',
-  png16: 'image/png',
-  tiff16: 'image/tiff',
-  jpeg: 'image/jpeg',
-  webp: 'image/webp',
-  avif: 'image/avif',
-};
-export const EXPORT_EXT: Record<ExportFormat, string> = {
-  png8: 'png',
-  png16: 'png',
-  tiff16: 'tif',
-  jpeg: 'jpg',
-  webp: 'webp',
-  avif: 'avif',
-};
+export { EXPORT_EXT, EXPORT_MIME } from '../model/exportFormats';
 
 export function describeError(error: unknown, fileName?: string): AppError {
   if (error instanceof DecodeError) {
@@ -663,7 +649,15 @@ export class Engine {
       void client.finishOpen(token).catch(() => {});
       if (restore) await this.#restore(restore, token);
       else if (params.lensBlurEnabled) this.#depth.ensure();
-      if (stillCurrent()) this.#set({ cover: undefined });
+      if (stillCurrent()) {
+        this.#set({ cover: undefined });
+        // Hangatkan varian rantai resep foto ini (grain hidup/mati + ekspor
+        // .cube untuk params saat ini): kompilasi shader 2..9 s jatuh selagi
+        // pengguna membaca foto, bukan saat pertama menyalakan grain atau
+        // mengekspor kubus. Lewat antrean yang sama dengan render: tersalip
+        // render berikutnya bila pengguna langsung menggeser, gagal = aman.
+        void client.prewarm().catch(() => {});
+      }
       return stillCurrent();
     } catch (error) {
       void client.discardOpen(token).catch(() => {});

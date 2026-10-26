@@ -97,6 +97,17 @@ describe('photo lifecycle', () => {
     engine.closePhoto();
     expect(engine.getState().before).toBeUndefined();
   });
+  it('prewarms the chain variants for the opened photo recipe right after opening', async () => {
+    const engine = new Engine();
+    client.prewarm.mockClear();
+    await engine.openFile(file('warm.png'));
+    await flush();
+    // Sekali lewat jalur init (resep bawaan) + sekali sesudah foto terbuka
+    // (resep foto ini): varian grain/.cube terkompilasi sebelum dipakai.
+    expect(client.prewarm.mock.calls.length).toBeGreaterThanOrEqual(2);
+    engine.closePhoto();
+  });
+
   it('film format gives a small preview, coalesces changes, then restores acquired detail', async () => {
     vi.useFakeTimers();
     const engine = new Engine();

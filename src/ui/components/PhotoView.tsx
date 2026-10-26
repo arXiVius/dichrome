@@ -25,6 +25,7 @@ const viewSpring = { type: 'spring' as const, duration: 0.42, bounce: 0 };
 const statusSpring = { type: 'spring' as const, duration: 0.3, bounce: 0.15 };
 import { Spinner } from './Overlays';
 import { ImageCompare, compareCut, useImageCompare } from './ImageCompare';
+import { PressButton } from '../components/controls';
 import { PhotoLightbox } from './PhotoLightbox';
 import type { Box } from './PhotoLightbox';
 import { previewPixelBudget } from '../../io/budget';
@@ -195,6 +196,8 @@ export function PhotoView({
   const areaRef = useRef<HTMLDivElement>(null);
   const [area, setArea] = useState({ width: 0, height: 0 });
   const [peek, setPeek] = useState(false);
+  /** Orientasi garis pembagi sebelum/sesudah: 'vertical' (garis vertikal, sebelum di kiri) atau 'horizontal' (garis horizontal, sebelum di atas). */
+  const [splitOrientation, setSplitOrientation] = useState<'vertical' | 'horizontal'>('vertical');
   const [slow, setSlow] = useState(false);
   const [aim, setAim] = useState<{ x: number; y: number } | null>(null);
   /** Pipet putih: lup yang mengikuti jari/kursor (dipilih saat dilepas/klik). */
@@ -444,8 +447,9 @@ export function PhotoView({
     setView((v) => latest.current.clampView(v));
   }, [area.width, area.height, rect.width, rect.height]);
 
-  const split = useImageCompare(rect.width * view.s);
+  const split = useImageCompare(splitOrientation === 'vertical' ? rect.width * view.s : rect.height * view.s);
   const splitAt = (clientX: number) => clamp01(toPhoto(local(clientX, 0).x, 0).x);
+  const splitAtY = (clientY: number) => clamp01(toPhoto(0, local(0, clientY).y).y);
 
   const picking = focus?.picking === true;
   const dropping = eyedropper?.active === true && !picking;
@@ -558,9 +562,15 @@ export function PhotoView({
       return;
     }
     if (compare) {
-      if (rect.width === 0) return;
-      splitDrag.current = true;
-      split.press(splitAt(e.clientX));
+      if (splitOrientation === 'vertical') {
+        if (rect.width === 0) return;
+        splitDrag.current = true;
+        split.press(splitAt(e.clientX));
+      } else {
+        if (rect.height === 0) return;
+        splitDrag.current = true;
+        split.press(splitAtY(e.clientY));
+      }
       return;
     }
     gesture.current = { kind: 'pan', x: p.x, y: p.y, view: dragOrigin(), moved: false, t: performance.now() };
@@ -599,7 +609,8 @@ export function PhotoView({
       return;
     }
     if (splitDrag.current) {
-      split.move(splitAt(e.clientX));
+      if (splitOrientation === 'vertical') split.move(splitAt(e.clientX));
+      else split.move(splitAtY(e.clientY));
       return;
     }
     if (g?.kind === 'pan' || g?.kind === 'tap') {
@@ -774,7 +785,21 @@ export function PhotoView({
                 state={split}
                 photo={{ x: sx(0), y: sy(0), width: rect.width * view.s, height: rect.height * view.s }}
                 bounds={{ width: rect.width, height: rect.height }}
+                orientation={splitOrientation}
               />
+            )}
+            {compare && !picking && (
+              <PressButton
+                className="icon-btn glass"
+                aria-label="Ubah orientasi pembanding"
+                title="Orientasi pembanding"
+                onClick={() => setSplitOrientation((o) => (o === 'vertical' ? 'horizontal' : 'vertical'))}
+                style={{
+                  position: 'absolute', top: 10, right: 10, padding: 6,
+                }}
+              >
+                <span className="secondary t-footnote">{splitOrientation === 'vertical' ? '┃' : '━'}</span>
+              </PressButton>
             )}
             {focus && (focus.show || picking) && (
               // Penanda fokus seperti EMULSION: lingkaran 30 px bertepi putih

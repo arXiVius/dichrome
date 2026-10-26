@@ -1,12 +1,12 @@
 /** Asset registry only; the implementation is independent of EMULSION code. */
 export const PRINT_LUTS = {
-  lut_kodak_2383_d55: { file: 'kodak-2383-d55.cube', name: 'Kodak 2383 D55', size: 33 },
-  lut_kodak_2383_d60: { file: 'kodak-2383-d60.cube', name: 'Kodak 2383 D60', size: 33 },
-  lut_kodak_2383_d65: { file: 'kodak-2383-d65.cube', name: 'Kodak 2383 D65', size: 33 },
-  lut_kodak_2393_d65: { file: 'kodak-2393-d65.cube', name: 'Kodak 2393 D65', size: 13 },
-  lut_fuji_3513_d55: { file: 'fuji-3513-d55.cube', name: 'Fujifilm 3513DI D55', size: 33 },
-  lut_fuji_3513_d60: { file: 'fuji-3513-d60.cube', name: 'Fujifilm 3513DI D60', size: 33 },
-  lut_fuji_3513_d65: { file: 'fuji-3513-d65.cube', name: 'Fujifilm 3513DI D65', size: 33 },
+  lut_kodak_2383_d55: { file: 'kodak-2383-d55', name: 'Kodak 2383 D55', size: 33 },
+  lut_kodak_2383_d60: { file: 'kodak-2383-d60', name: 'Kodak 2383 D60', size: 33 },
+  lut_kodak_2383_d65: { file: 'kodak-2383-d65', name: 'Kodak 2383 D65', size: 33 },
+  lut_kodak_2393_d65: { file: 'kodak-2393-d65', name: 'Kodak 2393 D65', size: 13 },
+  lut_fuji_3513_d55: { file: 'fuji-3513-d55', name: 'Fujifilm 3513DI D55', size: 33 },
+  lut_fuji_3513_d60: { file: 'fuji-3513-d60', name: 'Fujifilm 3513DI D60', size: 33 },
+  lut_fuji_3513_d65: { file: 'fuji-3513-d65', name: 'Fujifilm 3513DI D65', size: 33 },
 } as const;
 export type PrintLutId = keyof typeof PRINT_LUTS;
 export const isPrintLut = (id: string): id is PrintLutId => Object.prototype.hasOwnProperty.call(PRINT_LUTS, id);
@@ -37,23 +37,49 @@ export function parsePrintCube(text: string, expectedSize: number): PrintCube {
   return { size, rgba: Float32Array.from(data) };
 }
 
+/**
+ * RGBA dari hasil biner (RGB f32 little-endian, tanpa alpha). Alpha = 1
+ * persis seperti parser teks di atas, jadi `samplePrintCube`/GPU melihat
+ * Larik identik bit per bit -- dijaga parity test terhadap berkas .cube
+ * sumber (assets/luts).
+ */
+function cubeFromRgbBytes(bytes: ArrayBuffer, size: number): PrintCube {
+  const n = size ** 3;
+  if (bytes.byteLength !== n * 3 * 4) throw new Error('Print LUT dimensions do not match its samples.');
+  const rgb = new Float32Array(bytes);
+  const rgba = new Float32Array(n * 4);
+  for (let i = 0; i < n; i++) {
+    rgba[i * 4] = rgb[i * 3]!;
+    rgba[i * 4 + 1] = rgb[i * 3 + 1]!;
+    rgba[i * 4 + 2] = rgb[i * 3 + 2]!;
+    rgba[i * 4 + 3] = 1;
+  }
+  return { size, rgba };
+}
+
 const cache = new Map<string, Promise<PrintCube>>();
-/** Lazy, shared CPU asset cache. A failed fetch can be retried on the next render. */
+/**
+ * Lazy, shared CPU asset cache. A failed fetch can be retried on the next render.
+ * Berkas = hasil panggungan `tools/bake-print-luts.mjs` (f32-LE), bukan lagi
+ * `.cube` teks: unduhan ~2,4x lebih kecil dan tanpa parse teks 36 ribu baris.
+ */
 export function loadPrintCube(id: PrintLutId, assetsBaseUrl: string): Promise<PrintCube> {
-  const path = `${assetsBaseUrl.replace(/\/?data\/?$/, '')}/luts/${PRINT_LUTS[id].file}`;
+  const path = `${assetsBaseUrl.replace(/\/?data\/?$/, '')}/luts/${PRINT_LUTS[id].file}.f32`;
   const existing = cache.get(path);
   if (existing) return existing;
   const pending = (async () => {
-    let text: string;
+    let bytes: ArrayBuffer;
     if (typeof process !== 'undefined' && process.versions?.node && !/^https?:/i.test(path)) {
       const fs = await import('node:fs/promises');
-      text = await fs.readFile(path, 'utf8');
+      // Salinan sekali: Buffer boleh berbagi pool; larik hasil tidak boleh.
+      const buf = await fs.readFile(path);
+      bytes = new Uint8Array(buf).buffer;
     } else {
       const response = await fetch(path);
       if (!response.ok) throw new Error(`Could not load ${PRINT_LUTS[id].name}: HTTP ${response.status}`);
-      text = await response.text();
+      bytes = await response.arrayBuffer();
     }
-    return parsePrintCube(text, PRINT_LUTS[id].size);
+    return cubeFromRgbBytes(bytes, PRINT_LUTS[id].size);
   })();
   cache.set(path, pending);
   void pending.catch(() => { if (cache.get(path) === pending) cache.delete(path); });

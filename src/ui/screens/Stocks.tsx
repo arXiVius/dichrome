@@ -6,7 +6,7 @@
  * dengan pilihan sebelumnya) dan sebagai source list sidebar (layar lebar,
  * `dense`: baris rapat, pilihan berisi biru, seperti sidebar macOS).
  */
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import { Icon } from '../components/Icon';
 import { PressButton, Segmented } from '../components/controls';
 import { PROCESS_MODES } from '../model/tools';
@@ -192,3 +192,13 @@ export function StockBrowser({
     </div>
   );
 }
+
+/**
+ * Di-memo: sidebar daftar stok (ratusan baris) tidak me-render ulang tiap
+ * frame seretan -- semua props sidebar berupa nilai/primitif + handler
+ * stabil dari Editor (`onPickStock`, `onProcess`, `setSidebarKind`).
+ * Prop objek (mis. `previous` di sheet) membuat memo tidak aktif, yang tidak
+ * masalah: sheet bersifat modal.
+ */
+export const MemoStockBrowser = memo(StockBrowser);
+

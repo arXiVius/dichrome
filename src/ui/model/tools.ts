@@ -113,6 +113,7 @@ export interface ChoiceOption<V extends string = string> {
   value: V;
   label: string;
   group?: string;
+  note?: string;
 }
 
 export interface ChoiceTool extends ToolBase {
@@ -171,14 +172,14 @@ export interface ToolGroup {
 }
 
 export const FILM_FORMATS: readonly ChoiceOption<FilmFormat>[] = [
-  { value: 'standard8', label: 'Standard 8' },
-  { value: 'super8', label: 'Super 8' },
-  { value: 'standard16', label: 'Standard 16' },
-  { value: 'super16', label: 'Super 16' },
-  { value: 'standard35', label: '35 mm' },
-  { value: 'super35', label: 'Super 35' },
-  { value: 'standard65', label: '65 mm' },
-  { value: 'imax70', label: 'IMAX 70' },
+  { value: 'standard8', label: 'Standard 8 mm', note: '10 µm grain · home-movie look' },
+  { value: 'super8', label: 'Super 8 mm', note: '12 µm grain' },
+  { value: 'standard16', label: 'Standard 16 mm', note: '15 µm grain · documentary classic' },
+  { value: 'super16', label: 'Super 16 mm', note: '18 µm grain · TV and indie film' },
+  { value: 'standard35', label: 'Standard 35 mm', note: '25 µm grain · reference format' },
+  { value: 'super35', label: 'Super 35 mm', note: '22 µm grain · cinematography' },
+  { value: 'standard65', label: 'Standard 65 mm', note: '38 µm grain · large format' },
+  { value: 'imax70', label: 'IMAX 70 mm', note: '50 µm grain · finest grain' },
 ];
 
 /** 26 label `manifest.colorSpaces.labels`, dikelompokkan untuk daftar pilihan. */

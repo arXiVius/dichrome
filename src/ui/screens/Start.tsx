@@ -4,7 +4,7 @@
  * foto, area fotonya berisi `DropZone`.
  */
 import { AnimatePresence, motion, useMotionValue, useReducedMotion } from 'motion/react';
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ChromeWordmark, GlassOrb } from '../components/WelcomeIntro';
 import { releaseBoot } from '../boot';
 import { StickerBurst } from '../components/StickerField';
@@ -18,11 +18,14 @@ import { RecentGrid } from '../components/RecentGrid';
 import { Sheet } from '../components/Sheet';
 import { PressButton } from '../components/controls';
 import { HAS_PROJECTS_KEY, projects } from '../projects/projects';
+import { batch } from '../batch';
 import { engine } from '../engine/engine';
 import type { ProjectCard } from '../projects/projects';
 import { ProjectsContent } from './Projects';
-import { SettingsContent } from './Settings';
-import { CameraScreen } from './Camera';
+/** Pengaturan dimuat dinamis: hanya dibuka dari layar Start, bukan jalur kritis. */
+const SettingsContentLazy = lazy(() => import('./Settings').then((m) => ({ default: m.SettingsContent })));
+/** Layar kamera dimuat dinamis (getUserMedia + jpeg dari video): bukan jalur buka-foto kritis. */
+const CameraScreen = lazy(() => import('./Camera').then((m) => ({ default: m.CameraScreen })));
 import { dayGroup } from '../projects/format';
 import { overlay, pressRelease, pressScale, scrimMotion } from '../motion';
 import { useEffect } from 'react';
@@ -184,6 +187,7 @@ export function DropZone({ onChoose: choose, engineFailed }: { onChoose: () => v
           onNew={onChoose}
           onCamera={() => { engine.start(); setCameraOpen(true); }}
           onSettings={() => setSettingsOpen(true)}
+          onAll={() => setAllOpen(true)}
           hint={touch ? undefined : 'drop a photo anywhere'}
         />
       )}
@@ -236,11 +240,13 @@ export function DropZone({ onChoose: choose, engineFailed }: { onChoose: () => v
 
       <AnimatePresence>
         {cameraOpen && (
-          <CameraScreen
-            key="camera"
-            onClose={() => setCameraOpen(false)}
-            onCaptured={(file) => { setCameraOpen(false); projects.requestRelink(undefined); void projects.openFile(file); }}
-          />
+          <Suspense fallback={null}>
+            <CameraScreen
+              key="camera"
+              onClose={() => setCameraOpen(false)}
+              onCaptured={(file) => { setCameraOpen(false); projects.requestRelink(undefined); void projects.openFile(file); }}
+            />
+          </Suspense>
         )}
       </AnimatePresence>
 
@@ -256,7 +262,9 @@ export function DropZone({ onChoose: choose, engineFailed }: { onChoose: () => v
           </PressButton>
         }
       >
-        <SettingsContent />
+        <Suspense fallback={<div className="sheet-content" style={{ padding: 24 }}><Spinner size={20} /></div>}>
+          <SettingsContentLazy />
+        </Suspense>
       </Sheet>
 
       <Sheet
@@ -268,9 +276,18 @@ export function DropZone({ onChoose: choose, engineFailed }: { onChoose: () => v
         dimAtMedium
         onClose={() => { setAllOpen(false); setRenaming(undefined); }}
         trailing={
-          <PressButton className="icon-btn" aria-label="Done" onClick={() => { setAllOpen(false); setRenaming(undefined); }}>
-            <Icon name="check" size={18} strokeWidth={2.8} />
-          </PressButton>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <PressButton
+              className="capsule bordered"
+              disabled={proj.list.length === 0}
+              onClick={() => { setAllOpen(false); setRenaming(undefined); batch.open(); }}
+            >
+              Export…
+            </PressButton>
+            <PressButton className="icon-btn" aria-label="Done" onClick={() => { setAllOpen(false); setRenaming(undefined); }}>
+              <Icon name="check" size={18} strokeWidth={2.8} />
+            </PressButton>
+          </span>
         }
       >
         <ProjectsContent

@@ -1,20 +1,32 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { installSquircleGeometry } from './squircle';
 import { Alert, Toast } from './components/Overlays';
 import { UndoReceipt } from './components/UndoReceipt';
 import { projects } from './projects/projects';
 import { describeError, engine } from './engine/engine';
-import { ACCEPTED_FILES, useEngineState, useFilePicker, useProjects, useSizeClass } from './hooks';
+import { ACCEPTED_FILES, useBatch, useEngineSelector, useFilePicker, useProjects, useSizeClass } from './hooks';
 import { Editor } from './screens/Editor';
 import { OpeningCard, UnsupportedScreen } from './screens/Start';
 import { PhotoFlight, useOpenFlight } from './components/PhotoFlight';
 
+/** Ekspor batch (fflate + layar ekspor) bukan jalur buka-foto: dimuat saat dipakai. */
+const BatchScreen = lazy(() => import('./screens/Batch').then((m) => ({ default: m.BatchScreen })));
+
 export function App() {
-  const state = useEngineState();
+  // Seretan slider memperbarui state engine ~60×/s: App hanya berlangganan
+  // potongan yang ia render sendiri. Editor berlangganan penuh lewat
+  // `useEngineState` di dalamnya, jadi sibling App (toast, alert, undo)
+  // tidak ikut me-render ulang tiap frame seretan.
+  const status = useEngineSelector((s) => s.engine);
+  const phase = useEngineSelector((s) => s.phase);
+  const preview = useEngineSelector((s) => s.preview);
+  const opening = useEngineSelector((s) => s.opening);
+  const notice = useEngineSelector((s) => s.notice);
+  const appError = useEngineSelector((s) => s.error);
   const openFlight = useOpenFlight();
   // Dialog "Opening" hanya untuk pembukaan yang lambat tanpa pratinjau browser (RAW, EXR):
   // foto biasa tampil seketika, jadi dialog tidak sempat berkedip.
-  const slowOpen = state.phase === 'opening' && !openFlight && !state.preview;
+  const slowOpen = phase === 'opening' && !openFlight && !preview;
   const [showOpening, setShowOpening] = useState(false);
   useEffect(() => {
     if (!slowOpen) { setShowOpening(false); return undefined; }
@@ -22,6 +34,7 @@ export function App() {
     return () => window.clearTimeout(t);
   }, [slowOpen]);
   const project = useProjects();
+  const batch = useBatch();
   const size = useSizeClass();
   const wide = size.width === 'regular';
   const [toast, setToast] = useState<string | null>(null);
@@ -77,10 +90,10 @@ export function App() {
 
   // Pesan engine tak memblokir (mis. pulih dari GPU yang ditarik sistem).
   useEffect(() => {
-    if (!state.notice) return;
-    showToast(state.notice, 4000);
+    if (!notice) return;
+    showToast(notice, 4000);
     engine.dismissNotice();
-  }, [state.notice, showToast]);
+  }, [notice, showToast]);
 
   // Ke latar tanpa foto: lepas GPU lebih dulu (iOS menariknya juga), siapkan lagi saat kembali.
   useEffect(() => {
@@ -94,16 +107,15 @@ export function App() {
     return () => document.removeEventListener('visibilitychange', onVisibility);
   }, []);
 
-  if (state.engine === 'unsupported') return <UnsupportedScreen />;
+  if (status === 'unsupported') return <UnsupportedScreen />;
 
-  const error = state.error ?? localError;
+  const error = appError ?? localError;
 
   return (
     <>
       <input ref={picker.ref} type="file" accept={ACCEPTED_FILES} className="sr-only" tabIndex={-1} aria-hidden="true" data-modal-exempt="" />
       <main style={{ position: 'absolute', inset: 0 }}>
         <Editor
-          state={state}
           wide={wide}
           landscape={size.landscape}
           onOpenFile={picker.pick}
@@ -111,8 +123,13 @@ export function App() {
           onError={(e) => setLocalError(describeError(e))}
         />
       </main>
-      <OpeningCard opening={slowOpen && showOpening ? state.opening : undefined} onCancel={() => engine.cancelOpening()} />
+      <OpeningCard opening={slowOpen && showOpening ? opening : undefined} onCancel={() => engine.cancelOpening()} />
       <PhotoFlight />
+      {batch.open && (
+        <Suspense fallback={null}>
+          <BatchScreen />
+        </Suspense>
+      )}
       <Alert
         open={!!error}
         title={error?.title ?? ''}

@@ -537,4 +537,172 @@ describe('RenderGraph', () => {
     await expect(graph.run(wrongSizedInput, params, Tap.RGB_IN)).rejects.toThrow(/64/);
     graph.dispose();
   });
+
+  describe('Incremental Stage Caching', () => {
+    it('skips upstream stages when only downstream stage parameters change', async () => {
+      const engine = await acquireDevice();
+      const graph = new RenderGraph(engine);
+
+      let encodeCountA = 0;
+      let encodeCountB = 0;
+      let encodeCountC = 0;
+
+      const incA = createIncrementStage(engine.device, Tap.RGB_IN, 1);
+      const incB = createIncrementStage(engine.device, Tap.CMY_FILM, 10);
+      const incC = createIncrementStage(engine.device, Tap.RGB_OUT, 100);
+
+      const stageA: Stage = {
+        name: 'stageA',
+        writesTaps: [Tap.RGB_IN],
+        paramHash: (_p, f) => `a:${f.filmFormatMm}`,
+        encode(encoder, ctx) {
+          encodeCountA += 1;
+          incA.encode(encoder, ctx);
+        },
+      };
+
+      const stageB: Stage = {
+        name: 'stageB',
+        writesTaps: [Tap.CMY_FILM],
+        paramHash: (_p, f) => `b:${f.grainAmount ?? 1}`,
+        encode(encoder, ctx) {
+          encodeCountB += 1;
+          incB.encode(encoder, ctx);
+        },
+      };
+
+      const stageC: Stage = {
+        name: 'stageC',
+        writesTaps: [Tap.RGB_OUT],
+        paramHash: (_p, f) => `c:${f.printExposure ?? 1}`,
+        encode(encoder, ctx) {
+          encodeCountC += 1;
+          incC.encode(encoder, ctx);
+        },
+      };
+
+      graph.addStage(stageA);
+      graph.addStage(stageB);
+      graph.addStage(stageC);
+
+      const width = 2;
+      const height = 2;
+      const input = new Float32Array(width * height * 4).fill(5);
+      const params = paramsFor(width, height);
+
+      // Run 1: initial run, all stages run
+      const out1 = await graph.run(input, params, Tap.RGB_OUT, {
+        frame: { filmFormatMm: 35, grainAmount: 1, printExposure: 1 },
+      });
+      expect(encodeCountA).toBe(1);
+      expect(encodeCountB).toBe(1);
+      expect(encodeCountC).toBe(1);
+      expect(out1[0]).toBeCloseTo(5 + 1 + 10 + 100, 4);
+
+      // Run 2: only stage C's parameter changed (printExposure)!
+      // Stages A and B MUST BE SKIPPED!
+      const out2 = await graph.run(input, params, Tap.RGB_OUT, {
+        frame: { filmFormatMm: 35, grainAmount: 1, printExposure: 2 },
+      });
+      expect(encodeCountA).toBe(1); // SKIPPED!
+      expect(encodeCountB).toBe(1); // SKIPPED!
+      expect(encodeCountC).toBe(2); // Ran!
+      expect(out2[0]).toBeCloseTo(5 + 1 + 10 + 100, 4);
+
+      // Run 3: stage B's parameter changed (grainAmount).
+      // Stage A MUST BE SKIPPED, stages B and C re-run!
+      const out3 = await graph.run(input, params, Tap.RGB_OUT, {
+        frame: { filmFormatMm: 35, grainAmount: 2, printExposure: 2 },
+      });
+      expect(encodeCountA).toBe(1); // STILL SKIPPED!
+      expect(encodeCountB).toBe(2); // Ran!
+      expect(encodeCountC).toBe(3); // Ran!
+      expect(out3[0]).toBeCloseTo(5 + 1 + 10 + 100, 4);
+
+      // Run 4: stage A's parameter changed (filmFormatMm).
+      // All stages re-run!
+      const out4 = await graph.run(input, params, Tap.RGB_OUT, {
+        frame: { filmFormatMm: 70, grainAmount: 2, printExposure: 2 },
+      });
+      expect(encodeCountA).toBe(2);
+      expect(encodeCountB).toBe(3);
+      expect(encodeCountC).toBe(4);
+      expect(out4[0]).toBeCloseTo(5 + 1 + 10 + 100, 4);
+
+      // Run 5: input changed, all stages re-run!
+      const newInput = new Float32Array(width * height * 4).fill(10);
+      const out5 = await graph.run(newInput, params, Tap.RGB_OUT, {
+        frame: { filmFormatMm: 70, grainAmount: 2, printExposure: 2 },
+      });
+      expect(encodeCountA).toBe(3);
+      expect(encodeCountB).toBe(4);
+      expect(encodeCountC).toBe(5);
+      expect(out5[0]).toBeCloseTo(10 + 1 + 10 + 100, 4);
+
+      graph.dispose();
+    });
+
+    it('can be disabled explicitly via incrementalCache: false', async () => {
+      const engine = await acquireDevice();
+      const graph = new RenderGraph(engine);
+      let count = 0;
+      const inc = createIncrementStage(engine.device, Tap.RGB_OUT, 1);
+      graph.addStage({
+        name: 'test',
+        writesTaps: [Tap.RGB_OUT],
+        paramHash: () => 'fixed',
+        encode(encoder, ctx) {
+          count += 1;
+          inc.encode(encoder, ctx);
+        },
+      });
+
+      const input = new Float32Array(16).fill(1);
+      const params = paramsFor(2, 2);
+
+      await graph.run(input, params, Tap.RGB_OUT, { incrementalCache: false });
+      expect(count).toBe(1);
+
+      await graph.run(input, params, Tap.RGB_OUT, { incrementalCache: false });
+      expect(count).toBe(2);
+
+      graph.dispose();
+    });
+
+    it('menahan checkpoint hanya sampai batas jumlah, dan perubahan hilir tetap melanjutkan dari checkpoint terakhir', async () => {
+      const engine = await acquireDevice();
+      const graph = new RenderGraph(engine);
+      // 10 tahap: batas cache (8) lebih kecil dari panjang rantai, jadi dua
+      // checkpoint terakhir sengaja TIDAK disimpan.
+      const counts: number[] = [];
+      for (let i = 0; i < 10; i += 1) {
+        const inc = createIncrementStage(engine.device, Tap.RGB_OUT, i + 1);
+        counts.push(0);
+        graph.addStage({
+          name: `stage${i}`,
+          writesTaps: [Tap.RGB_OUT],
+          // Hanya tahap terakhir yang bergantung pada `printExposure`.
+          paramHash: (_p, f) => `s${i}:${f.grainAmount ?? 1}:${i === 9 ? f.printExposure ?? 1 : 1}`,
+          encode(encoder, ctx) {
+            counts[i] = counts[i]! + 1;
+            inc.encode(encoder, ctx);
+          },
+        });
+      }
+      const input = new Float32Array(2 * 2 * 4).fill(1);
+      const params = paramsFor(2, 2);
+
+      await graph.run(input, params, Tap.RGB_OUT, { frame: { filmFormatMm: 35, grainAmount: 1, printExposure: 1 } });
+      expect(counts).toEqual(Array.from({ length: 10 }, () => 1));
+      expect(graph.checkpointUsage).toEqual({ count: 8, bytes: 8 * input.byteLength });
+
+      // Perubahan hilir: dimulai dari checkpoint terakhir yang tersimpan (7),
+      // jadi tahap 8 dan 9 berjalan lagi dan tahap 0..7 dilewati.
+      await graph.run(input, params, Tap.RGB_OUT, { frame: { filmFormatMm: 35, grainAmount: 1, printExposure: 2 } });
+      expect(counts).toEqual([...Array.from({ length: 8 }, () => 1), 2, 2]);
+      expect(graph.checkpointUsage.count).toBe(8);
+
+      graph.dispose();
+    });
+  });
 });

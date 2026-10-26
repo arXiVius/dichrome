@@ -1,12 +1,16 @@
 /*
  * SF Pro Display untuk semua teks (permintaan pemilik proyek). Perangkat Apple
  * memakai SF bawaan sistem lewat `-apple-system` di `--font`; platform lain
- * (Windows, Android) memakai berkas .otf resmi Apple di public/fonts/sf-pro/
- * (di mesin lain: tools/install-sf-pro.ps1). `local()` lebih dulu supaya font
- * yang terpasang tidak diunduh ulang; tanpa berkas, jatuh ke Inter Variable.
- * Sengaja TIDAK di-precache PWA: perangkat Apple tidak pernah memintanya.
+ * (Windows, Android) memakai WOFF2 hasil subset (tools/subset-sf-pro.ps1) dari
+ * berkas .otf resmi Apple di public/fonts/sf-pro/ (di mesin lain:
+ * tools/install-sf-pro.ps1). Subset mempertahankan superset semua karakter di
+ * src/ (Latin, Yunani, tanda baca, pecahan, simbol) sehingga tampilan identik;
+ * .otf asli tetap sebagai fallback dan sumber subsetting ulang. `local()` lebih
+ * dulu supaya font yang terpasang tidak diunduh ulang; tanpa berkas, jatuh ke
+ * Inter Variable. Sengaja TIDAK di-precache PWA: perangkat Apple tidak pernah
+ * memintanya.
  */
-@font-face { font-family: "DICHROIC SF Display"; font-weight: 400; font-style: normal; font-display: swap; src: local("SF Pro Display Regular"), local("SFProDisplay-Regular"), url("/fonts/sf-pro/SF-Pro-Display-Regular.otf") format("opentype"); }
-@font-face { font-family: "DICHROIC SF Display"; font-weight: 500; font-style: normal; font-display: swap; src: local("SF Pro Display Medium"), local("SFProDisplay-Medium"), url("/fonts/sf-pro/SF-Pro-Display-Medium.otf") format("opentype"); }
-@font-face { font-family: "DICHROIC SF Display"; font-weight: 600; font-style: normal; font-display: swap; src: local("SF Pro Display Semibold"), local("SFProDisplay-Semibold"), url("/fonts/sf-pro/SF-Pro-Display-Semibold.otf") format("opentype"); }
-@font-face { font-family: "DICHROIC SF Display"; font-weight: 700; font-style: normal; font-display: swap; src: local("SF Pro Display Bold"), local("SFProDisplay-Bold"), url("/fonts/sf-pro/SF-Pro-Display-Bold.otf") format("opentype"); }
+@font-face { font-family: "DICHROIC SF Display"; font-weight: 400; font-style: normal; font-display: swap; src: local("SF Pro Display Regular"), local("SFProDisplay-Regular"), url("/fonts/sf-pro/SF-Pro-Display-Regular.subset.woff2") format("woff2"), url("/fonts/sf-pro/SF-Pro-Display-Regular.otf") format("opentype"); }
+@font-face { font-family: "DICHROIC SF Display"; font-weight: 500; font-style: normal; font-display: swap; src: local("SF Pro Display Medium"), local("SFProDisplay-Medium"), url("/fonts/sf-pro/SF-Pro-Display-Medium.subset.woff2") format("woff2"), url("/fonts/sf-pro/SF-Pro-Display-Medium.otf") format("opentype"); }
+@font-face { font-family: "DICHROIC SF Display"; font-weight: 600; font-style: normal; font-display: swap; src: local("SF Pro Display Semibold"), local("SFProDisplay-Semibold"), url("/fonts/sf-pro/SF-Pro-Display-Semibold.subset.woff2") format("woff2"), url("/fonts/sf-pro/SF-Pro-Display-Semibold.otf") format("opentype"); }
+@font-face { font-family: "DICHROIC SF Display"; font-weight: 700; font-style: normal; font-display: swap; src: local("SF Pro Display Bold"), local("SFProDisplay-Bold"), url("/fonts/sf-pro/SF-Pro-Display-Bold.subset.woff2") format("woff2"), url("/fonts/sf-pro/SF-Pro-Display-Bold.otf") format("opentype"); }

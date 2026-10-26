@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { PRINT_LUTS, loadPrintCube, encodeCineon, decodeCineon, samplePrintCube, type PrintLutId } from '../src/profiles/printLuts';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { PRINT_LUTS, loadPrintCube, encodeCineon, decodeCineon, parsePrintCube, samplePrintCube, type PrintLutId } from '../src/profiles/printLuts';
 import { Session } from '../src/session/session';
 import { sharedResources } from './parity/run';
 import { BASELINE_RENDER_PARAMS } from '../src/params/renderParams';
@@ -48,6 +50,19 @@ describe('Cineon print LUTs', () => {
     expect(encodeCineon(0)).toBeCloseTo(95 / 1023, 12);
     expect(encodeCineon(1)).toBeCloseTo(685 / 1023, 12);
     for (const v of [0, 0.001, 0.18, 1, 8]) expect(decodeCineon(encodeCineon(v))).toBeCloseTo(v, 10);
+  });
+  it('baked .f32 assets are BIT-IDENTICAL to parsing the original .cube text (tools/bake-print-luts.mjs)', async () => {
+    // Tampilan tidak boleh berubah oleh pemanggungan: byte-per-byte sama
+    // dengan parsePrintCube(teks .cube sumber), termasuk alpha = 1.
+    for (const id of Object.keys(PRINT_LUTS) as PrintLutId[]) {
+      const text = readFileSync(join('assets', 'luts', `${PRINT_LUTS[id].file}.cube`), 'utf8');
+      const parsed = parsePrintCube(text, PRINT_LUTS[id].size);
+      const loaded = await loadPrintCube(id, 'public/data');
+      expect(loaded.size, id).toBe(parsed.size);
+      const a = Buffer.from(parsed.rgba.buffer, parsed.rgba.byteOffset, parsed.rgba.byteLength);
+      const b = Buffer.from(loaded.rgba.buffer, loaded.rgba.byteOffset, loaded.rgba.byteLength);
+      expect(Buffer.compare(b, a), id).toBe(0);
+    }
   });
   it('selecting a print LUT enables Print, including with Film Off or reversal film', () => {
     const params = { ...BASELINE_RENDER_PARAMS, filmEnabled: false, process: 'scanNegative' as const };

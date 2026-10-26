@@ -3,13 +3,56 @@ import { engine } from './engine/engine';
 import type { EngineState } from './engine/engine';
 import { projects } from './projects/projects';
 import type { ProjectsState } from './projects/projects';
+import { batch } from './batch';
+import type { BatchState } from './batch';
 
 export function useEngineState(): EngineState {
   return useSyncExternalStore(engine.subscribe, engine.getState);
 }
 
+/**
+ * Render ulang hanya bila potongan state yang dipilih berubah (per referensi
+ * atau `isEqual`). Selama seretan slider, `EngineState` berganti tiap frame
+ * (~60×/s): komponen yang hanya butuh sebagian kecil state (toolbar, sibling
+ * App, sheet) tidak ikut me-render ulang.
+ *
+ * `selector` boleh inline: identitasnya tidak memicu render ulang, hanya
+ * hasil pemilihannya yang dibaca saat `getSnapshot` dipanggil React.
+ */
+export function useEngineSelector<T>(selector: (state: EngineState) => T, isEqual: (a: T, b: T) => boolean = Object.is): T {
+  // Selector boleh inline; identitasnya tidak boleh memicu render ulang, tapi
+  // HARUS dipakai versi terbaru: `getSnapshot` bisa dipanggil saat render.
+  // Karena itu ref diperbarui saat render (bukan di effect -- effect jalan
+  // sesudah paint, jadi satu frame bisa membaca selector lama).
+  const selectorRef = useRef(selector);
+  const isEqualRef = useRef(isEqual);
+  selectorRef.current = selector;
+  isEqualRef.current = isEqual;
+  // Cache per snapshot: `getSnapshot` wajib mengembalikan referensi yang sama
+  // bila tidak ada perubahan (aturan `useSyncExternalStore`), dan tidak boleh
+  // membuat objek baru tiap panggilan (bisa dipanggil berkali-kali per render).
+  const cache = useRef<{ state: EngineState; value: T } | null>(null);
+  const getSnapshot = useCallback((): T => {
+    const state = engine.getState();
+    const cached = cache.current;
+    if (cached && cached.state === state) return cached.value;
+    const value = selectorRef.current(state);
+    if (cached && isEqualRef.current(cached.value, value)) {
+      cache.current = { state, value: cached.value };
+      return cached.value;
+    }
+    cache.current = { state, value };
+    return value;
+  }, []);
+  return useSyncExternalStore(engine.subscribe, getSnapshot);
+}
+
 export function useProjects(): ProjectsState {
   return useSyncExternalStore(projects.subscribe, projects.getState);
+}
+
+export function useBatch(): BatchState {
+  return useSyncExternalStore(batch.subscribe, batch.getState);
 }
 
 export interface SizeClass {

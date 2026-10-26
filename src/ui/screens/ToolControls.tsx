@@ -3,7 +3,7 @@
  * lebar (semua alat satu kelompok). Satu sumber kebenaran: `model/tools.ts`.
  */
 import { motion } from 'motion/react';
-import { useEffect, useRef } from 'react';
+import { memo, useCallback, useEffect, useRef } from 'react';
 import type { RenderParams } from '../../params/renderParams';
 import { Icon } from '../components/Icon';
 import { useElasticScroll } from '../components/useElasticScroll';
@@ -86,7 +86,7 @@ export function isLongChoice(tool: ChoiceTool): boolean {
 }
 
 /** Sakelar di readout: alat bertoggle (auto exposure, decode) dan slider ber-`enabledBy`. */
-export function ToolSwitch({ tool, ctx }: { tool: Tool; ctx: ToolContext }) {
+function ToolSwitchInner({ tool, ctx }: { tool: Tool; ctx: ToolContext }) {
   const { params, onPatch } = ctx;
   if (tool.kind === 'toggle') {
     const allowed = tool.field !== 'inputCctfDecoding' || decodeAllowed(params.inputColorSpace);
@@ -104,7 +104,11 @@ export function ToolSwitch({ tool, ctx }: { tool: Tool; ctx: ToolContext }) {
   return null;
 }
 
-export function ResetButton({ tool, ctx, compact }: { tool: Tool; ctx: ToolContext; compact?: boolean }) {
+/** Di-memo: hanya membaca field sakelarnya (lihat `sameToolRow`). */
+export const ToolSwitch = memo(ToolSwitchInner, sameToolRow);
+
+/** Tombol reset kecil di judul alat (dan baris inspector): hanya bila diubah. */
+function ResetButtonInner({ tool, ctx, compact }: { tool: Tool; ctx: ToolContext; compact?: boolean }) {
   const show = (tool.kind === 'slider' || tool.kind === 'stepper' || tool.kind === 'diffusion' || tool.kind === 'whiteBalance') && isModified(tool, ctx.params, ctx.defaults);
   return (
     <motion.span
@@ -119,6 +123,10 @@ export function ResetButton({ tool, ctx, compact }: { tool: Tool; ctx: ToolConte
     </motion.span>
   );
 }
+
+/** Di-memo: `show` hanya bergantung pada field alat itu (lihat `sameToolRow`). */
+export const ResetButton = memo(ResetButtonInner, (prev, next) =>
+  prev.compact === next.compact && sameToolRow({ tool: prev.tool, ctx: prev.ctx }, { tool: next.tool, ctx: next.ctx }));
 
 /** Nilai, petunjuk, dan aksi satu stepper (panel HP dan baris inspector). */
 function stepperModel(tool: StepperTool, params: RenderParams, onPatch: ToolContext['onPatch']) {
@@ -151,15 +159,117 @@ function stepperModel(tool: StepperTool, params: RenderParams, onPatch: ToolCont
 const randomSeed = () => ({ grainSeed: 1 + Math.floor(Math.random() * 9999) });
 
 /**
- * Kontrol utama alat (slider, stepper, pilihan, atau catatan). `dense`:
- * baris inspector layar lebar -- pilihan pendek dan stepper hidup di baris
- * label (pop-up, −/+), di sini hanya catatannya.
+ * Field `params` yang dibaca satu alat saat me-render (dibangkitkan dari
+ * `model/tools.ts`; lihat komentar per jenis di bawah). Dipakai pembanding
+ * `memo` supaya seretan satu slider tidak me-render ulang baris alat lain:
+ * hanya baris yang field-nya berubah yang bangun ulang. Daftar ini HARUS
+ * menutup semua yang dibaca `ToolControl`/`InspectorTool`/`ToolSwitch`/
+ * `ResetButton`/`ToolChips` untuk alat itu -- bila ragu, biarkan baris
+ * me-render (bandingkan `wholeParams`, bukan menghapus field).
  */
+type Params = RenderParams;
+
+function sliderInputs(tool: SliderTool): Array<keyof Params> {
+  const inputs: Array<keyof Params> = [tool.field];
+  if (tool.enabledBy) inputs.push(tool.enabledBy);
+  if (tool.requires) inputs.push(tool.requires);
+  if (tool.maxField) inputs.push(tool.maxField);
+  // `valueText`/`sliderPosition` ber-`zeroAs: 'normalFocal'` memakai filmFormat.
+  if (tool.zeroAs === 'normalFocal') inputs.push('filmFormat');
+  return inputs;
+}
+
+function toolParamInputs(tool: Tool): Array<keyof Params> {
+  switch (tool.kind) {
+    case 'slider': return sliderInputs(tool);
+    case 'stepper':
+      // `stepperModel` (teks, ujung, inc/dec) + `valueText` + `toolEnabled`.
+      // `lensFNumber` tampil di readout kedalaman ruang kartu Lens.
+      return tool.requires ? [tool.field, tool.requires] : [tool.field];
+    case 'toggle':
+      // `inputCctfDecoding` memakai `params.inputColorSpace` (`decodeAllowed`).
+      return tool.field === 'inputCctfDecoding' ? [tool.field, 'inputColorSpace'] : [tool.field];
+    case 'choice':
+      // `inputColorSpace` (long-choice) memakai `decodeAllowed(inputColorSpace)`.
+      return [tool.field, 'inputColorSpace'];
+    case 'diffusion':
+      // Sakelar + family + strength + `toolEnabled` + `valueText`.
+      return [tool.enabledBy, tool.familyField, tool.strengthField];
+    case 'whiteBalance':
+      // Kedua slider Temp/Tint + teks readout-nya.
+      return [...tool.fields];
+    case 'lens':
+      // Sakelar + kartu: status unduhan/progres/galat, model, GPU, refine,
+      // dan readout kedalaman ruang (`lensReadoutText`: semua field lens* +
+      // filmFormat + lensFNumber). `aspect` ikut dibandingkan terpisah.
+      return ['lensBlurEnabled', 'lensFocusX', 'lensFocusY', 'lensFocusDistanceM', 'lensFNumber',
+        'lensFocalLengthMm', 'lensNearSharpM', 'lensBlades', 'lensBladeCurvature', 'lensCatEye',
+        'lensForeground', 'filmFormat'];
+    case 'locked':
+      return [];
+  }
+}
+
 /**
- * `ruler`: panel HP -- slider jadi penggaris (RulerSlider) dan catatan alat
- * tidak ditampilkan di bawahnya (dibuka lewat tombol info di judul alat).
+ * `true` bila baris alat ini tampil SAMA PERSIS dengan props sebelumnya.
+ * `ctx.defaults` dibaca `isModified` (titik biru + tombol reset): ikut
+ * dibandingkan per field yang sama. `onPatch`/`onOpenList`/
+ * `onInteractionChange` stabil (dibuat sekali di Editor), jadi identitasnya
+ * boleh dibandingkan langsung; `lens`/`whiteBalance` dibandingkan per nilai.
  */
-export function ToolControl({ tool, ctx, dense, ruler }: { tool: Tool; ctx: ToolContext; dense?: boolean; ruler?: boolean }) {
+function sameToolRow(
+  prev: { tool: Tool; ctx: ToolContext; dense?: boolean; ruler?: boolean },
+  next: { tool: Tool; ctx: ToolContext; dense?: boolean; ruler?: boolean },
+): boolean {
+  if (prev.tool !== next.tool || prev.dense !== next.dense || prev.ruler !== next.ruler) return false;
+  const tool = next.tool;
+  const a = prev.ctx, b = next.ctx;
+  for (const f of toolParamInputs(tool)) {
+    if (!Object.is(a.params[f], b.params[f])) return false;
+    if (!Object.is(a.defaults[f], b.defaults[f])) return false;
+  }
+  if (a.onPatch !== b.onPatch || a.onOpenList !== b.onOpenList || a.onInteractionChange !== b.onInteractionChange) return false;
+  if (tool.kind === 'whiteBalance') {
+    const wa = a.whiteBalance, wb = b.whiteBalance;
+    if (!!wa !== !!wb) return false;
+    if (wa && wb && (wa.picking !== wb.picking || wa.busy !== wb.busy || wa.onPick !== wb.onPick || wa.onAuto !== wb.onAuto)) return false;
+  }
+  if (tool.kind === 'lens') {
+    const la = a.lens, lb = b.lens;
+    if (!!la !== !!lb) return false;
+    if (la && lb) {
+      if (la.aspect !== lb.aspect || la.model !== lb.model || la.gpu !== lb.gpu || la.gpuOption !== lb.gpuOption
+        || la.refined !== lb.refined || la.models !== lb.models || la.experimental !== lb.experimental
+        || la.onDownload !== lb.onDownload || la.onRetry !== lb.onRetry || la.onModel !== lb.onModel
+        || la.onGpu !== lb.onGpu || la.onRefine !== lb.onRefine) return false;
+      const da = la.depth, db = lb.depth;
+      if (da !== db) {
+        if (!da || !db || da.status !== db.status) return false;
+        // Progres unduhan/inferensi berubah tiap tick: bandingkan per status.
+        if (da.status === 'working' || db.status === 'working') {
+          if (da.status !== 'working' || db.status !== 'working') return false;
+          if (da.phase !== db.phase || da.loaded !== db.loaded || da.total !== db.total) return false;
+        } else if (da.status === 'needs-download' || db.status === 'needs-download') {
+          if (da.status !== 'needs-download' || db.status !== 'needs-download' || da.bytes !== db.bytes) return false;
+        } else if (da.status === 'error' || db.status === 'error') {
+          if (da.status !== 'error' || db.status !== 'error' || da.message !== db.message) return false;
+        } else if (da.status === 'ready' || db.status === 'ready') {
+          if (da.status !== 'ready' || db.status !== 'ready' || da.backend !== db.backend
+            || da.model !== db.model || da.variant !== db.variant || da.ms !== db.ms) return false;
+        }
+      }
+    }
+  }
+  return true;
+}
+
+/**
+ * Baris alat yang di-memo per jenis kontrol: seretan satu slider hanya
+ * me-render ulang barisnya sendiri (dan wadahnya), bukan semua baris.
+ * Pembanding di atas menjamin tampilan identik: perubahan apa pun yang
+ * memengaruhi satu piksel output akan gagal dibandingkan dan me-render ulang.
+ */
+function ToolControlInner({ tool, ctx, dense, ruler }: { tool: Tool; ctx: ToolContext; dense?: boolean; ruler?: boolean }) {
   const { params, defaults, onPatch } = ctx;
   const SliderControl = ruler ? RulerSlider : Slider;
   switch (tool.kind) {
@@ -267,6 +377,16 @@ export function ToolControl({ tool, ctx, dense, ruler }: { tool: Tool; ctx: Tool
       return <p className="t-subhead secondary" style={{ margin: 0 }}>{tool.note}</p>;
   }
 }
+
+/**
+ * Kontrol utama alat (slider, stepper, pilihan, atau catatan). `dense`:
+ * baris inspector layar lebar -- pilihan pendek dan stepper hidup di baris
+ * label (pop-up, −/+), di sini hanya catatannya.
+ *
+ * `ruler`: panel HP -- slider jadi penggaris (RulerSlider) dan catatan alat
+ * tidak ditampilkan di bawahnya (dibuka lewat tombol info di judul alat).
+ */
+export const ToolControl = memo(ToolControlInner, sameToolRow);
 
 /**
  * White Balance: pipet dan Auto di atas, Temp dan Tint di bawahnya. Pipet
@@ -429,8 +549,47 @@ function LensCard({ tool, ctx }: { tool: LensTool; ctx: ToolContext }) {
   );
 }
 
+/**
+ * Satu pil alat: `sameToolRow` menjaga agar seretan slider tidak membangun
+ * ulang pil alat lain (hanya field pil itu sendiri yang dibandingkan).
+ */
+function ToolChipInner({ tool, ctx, selected, onSelect, register }: {
+  tool: Tool; ctx: ToolContext; selected: boolean; onSelect: (id: string) => void;
+  register: (id: string, el: HTMLButtonElement | null) => void;
+}) {
+  const modified = isModified(tool, ctx.params, ctx.defaults);
+  const dimmed = !toolEnabled(tool, ctx.params) || (tool.kind === 'toggle' && !ctx.params[tool.field]);
+  return (
+    <motion.button
+      key={tool.id}
+      ref={(el: HTMLButtonElement | null) => register(tool.id, el)}
+      type="button"
+      className="tool-pill"
+      aria-pressed={selected}
+      aria-label={`${tool.title}${modified ? ', edited' : ''}${tool.kind === 'locked' ? ', not yet available' : ''}`}
+      onClick={() => onSelect(tool.id)}
+      whileTap={{ scale: pressScale }}
+      initial={false}
+      animate={{
+        backgroundColor: selected ? 'rgba(var(--ink), 0.92)' : 'rgba(var(--ink), 0.06)',
+        color: selected ? 'var(--bg)' : dimmed ? 'var(--label-3)' : 'var(--label-2)',
+      }}
+      transition={snappy}
+    >
+      <Icon name={tool.kind === 'locked' ? 'lock' : tool.icon} size={15} strokeWidth={2.2} color={selected ? 'currentColor' : tool.tint ?? 'currentColor'} />
+      {tool.label}
+      {/* Sudah diubah: titik Signal Blue (dulu cincin biru di ikon). */}
+      {modified && <span className="tool-pill-dot" aria-hidden="true" />}
+    </motion.button>
+  );
+}
+
+const ToolChip = memo(ToolChipInner, (prev, next) =>
+  prev.selected === next.selected && prev.onSelect === next.onSelect && prev.register === next.register
+  && sameToolRow({ tool: prev.tool, ctx: prev.ctx }, { tool: next.tool, ctx: next.ctx }));
+
 /** Deretan alat satu kelompok (panel HP). Alat terpilih digulir ke tengah. */
-export function ToolChips({ group, selected, onSelect, ctx }: { group: ToolGroup; selected: string; onSelect: (id: string) => void; ctx: ToolContext }) {
+function ToolChipsInner({ group, selected, onSelect, ctx }: { group: ToolGroup; selected: string; onSelect: (id: string) => void; ctx: ToolContext }) {
   const scroll = useElasticScroll();
   const resetScroll = scroll.reset;
   const refs = useRef(new Map<string, HTMLButtonElement>());
@@ -439,47 +598,44 @@ export function ToolChips({ group, selected, onSelect, ctx }: { group: ToolGroup
     const el = refs.current.get(selected);
     if (el) centerInScroller(el);
   }, [selected, resetScroll]);
+  const register = useCallback((id: string, el: HTMLButtonElement | null) => {
+    if (el) refs.current.set(id, el);
+    else refs.current.delete(id);
+  }, []);
   return (
     <div ref={scroll.ref} role="group" aria-label={`${group.label} tools`} className="scroll-x mobile-tools" {...scroll.handlers}>
       <motion.div className="mobile-tools-track" style={{ transform: scroll.transform }}>
-      {visibleTools(group, ctx.params).map((tool) => {
-        const isSelected = tool.id === selected;
-        const modified = isModified(tool, ctx.params, ctx.defaults);
-        const dimmed = !toolEnabled(tool, ctx.params) || (tool.kind === 'toggle' && !ctx.params[tool.field]);
-        return (
-          <motion.button
-            key={tool.id}
-            ref={(el: HTMLButtonElement | null) => {
-              if (el) refs.current.set(tool.id, el);
-              else refs.current.delete(tool.id);
-            }}
-            type="button"
-            className="tool-pill"
-            aria-pressed={isSelected}
-            aria-label={`${tool.title}${modified ? ', edited' : ''}${tool.kind === 'locked' ? ', not yet available' : ''}`}
-            onClick={() => onSelect(tool.id)}
-            whileTap={{ scale: pressScale }}
-            initial={false}
-            animate={{
-              backgroundColor: isSelected ? 'rgba(var(--ink), 0.92)' : 'rgba(var(--ink), 0.06)',
-              color: isSelected ? 'var(--bg)' : dimmed ? 'var(--label-3)' : 'var(--label-2)',
-            }}
-            transition={snappy}
-          >
-            <Icon name={tool.kind === 'locked' ? 'lock' : tool.icon} size={15} strokeWidth={2.2} color={isSelected ? 'currentColor' : tool.tint ?? 'currentColor'} />
-            {tool.label}
-            {/* Sudah diubah: titik Signal Blue (dulu cincin biru di ikon). */}
-            {modified && <span className="tool-pill-dot" aria-hidden="true" />}
-          </motion.button>
-        );
-      })}
+      {visibleTools(group, ctx.params).map((tool) => (
+        <ToolChip key={tool.id} tool={tool} ctx={ctx} selected={tool.id === selected} onSelect={onSelect} register={register} />
+      ))}
       </motion.div>
     </div>
   );
 }
 
+/**
+ * Di-memo: pil hanya berubah bila pilihan/grup berubah, atau bila salah satu
+ * alat yang terlihat berubah tampilannya (titik edited, redup, label).
+ * `toolEnabled` hanya membaca `requires`/`enabledBy` (sudah di
+ * `toolParamInputs`) + `inputColorSpace` untuk Decode (sudah dicakup) --
+ * jadi `sameToolRow` per alat cukup, plus identitas daftar alat terlihat.
+ */
+export const ToolChips = memo(ToolChipsInner, (prev, next) => {
+  if (prev.group !== next.group || prev.selected !== next.selected || prev.onSelect !== next.onSelect) return false;
+  // Daftar alat terlihat juga bergantung pada mode proses (process + paper LUT).
+  if (prev.ctx.params.process !== next.ctx.params.process || prev.ctx.params.paper !== next.ctx.params.paper) return false;
+  const prevTools = visibleTools(prev.group, prev.ctx.params);
+  const nextTools = visibleTools(next.group, next.ctx.params);
+  if (prevTools.length !== nextTools.length) return false;
+  for (let i = 0; i < nextTools.length; i++) {
+    if (prevTools[i] !== nextTools[i]) return false;
+    if (!sameToolRow({ tool: prevTools[i]!, ctx: prev.ctx }, { tool: nextTools[i]!, ctx: next.ctx })) return false;
+  }
+  return true;
+});
+
 /** Satu alat sebagai baris inspector (layar lebar). */
-export function InspectorTool({ tool, ctx }: { tool: Tool; ctx: ToolContext }) {
+function InspectorToolInner({ tool, ctx }: { tool: Tool; ctx: ToolContext }) {
   const locked = tool.kind === 'locked';
   const modified = isModified(tool, ctx.params, ctx.defaults);
   const stepper = tool.kind === 'stepper' ? stepperModel(tool, ctx.params, ctx.onPatch) : null;
@@ -526,3 +682,6 @@ export function InspectorTool({ tool, ctx }: { tool: Tool; ctx: ToolContext }) {
     </div>
   );
 }
+
+/** Baris inspector layar lebar: di-memo dengan pembanding baris yang sama. */
+export const InspectorTool = memo(InspectorToolInner, sameToolRow);

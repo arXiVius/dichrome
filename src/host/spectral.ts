@@ -50,13 +50,21 @@
  *   dibagi). Diverifikasi ulang di sini sebelum dipakai, bukan diterima
  *   dari catatan lama.
  *
- * PENYIMPANGAN KEDUA, JUGA DIBUKTIKAN: `hanatosRawResponse` TIDAK dibangun
- * dari field stock `bandpassHanatos2025` (cabang "Hanatos2025" hulu di
- * `SpektraVulkanRenderer.cpp::makeHanatosRawResponse`), melainkan dari
- * `hanatos2026WindowParams` (cabang "Hanatos2026" hulu, window erf4 dihitung
- * ULANG dari `window_params`) -- lih. `computeErf4Window` dan
- * `makeHanatosRawResponse` di bawah untuk penjelasan lengkap dan bukti
- * numerik yang menutupnya ke ~3e-5 (dari >30x lebih besar sebelumnya).
+ *   PENYIMPANGAN KEDUA, JUGA DIBUKTIKAN: `hanatosRawResponse` TIDAK dibangun
+ *   dari field stock `bandpassHanatos2025` (cabang "Hanatos2025" hulu di
+ *   `SpektraVulkanRenderer.cpp::makeHanatosRawResponse`), melainkan dari
+ *   `hanatos2026WindowParams` (cabang "Hanatos2026" hulu, window erf4 dihitung
+ *   ULANG dari `window_params`) -- lih. `computeErf4Window` dan
+ *   `makeHanatosRawResponse` di bawah untuk penjelasan lengkap dan bukti
+ *   numerik yang menutupnya ke ~3e-5 (dari >30x lebih besar sebelumnya).
+ *
+ * PENINGTINGAN PERFORMA (roadmap):
+ *
+ *   ~1,270 baris TypeScript ini berjalan di CPU pada setiap perubahan parameter
+ *   stock/filter. Kandidat port ke Rust/WASM (`wasm-pack` + `wasm-bindgen`)
+ *   dipanggil dari Session worker. Versi TS dipertahankan sebagai referensi
+ *   parity. Prioritas: Medium — dampak besar pada responsivitas pratinjau di
+ *   perangkat seluler.
  */
 
 import { nanmaxPerChannel } from './dirCouplers';

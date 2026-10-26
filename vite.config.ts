@@ -66,7 +66,7 @@ export default defineConfig({
       includeManifestIcons: false,
       injectManifest: {
         // Manifest aplikasi ditambahkan plugin sendiri.
-        globPatterns: ['**/*.{html,js,css,wasm,svg,png,json,f16,f32,cube,bin,woff2}'],
+        globPatterns: ['**/*.{html,js,css,wasm,svg,png,json,f16,f32,bin,woff2}'],
         // Layar pembuka hanya diminta iOS saat memasang; tidak perlu offline.
         // Runtime WASM ONNX Runtime (lens blur, 14-27 MB) diambil worker
         // kedalaman lewat cache kedalamannya sendiri (`src/depth/model.ts`),
@@ -107,5 +107,25 @@ export default defineConfig({
   optimizeDeps: { exclude: ['libraw-wasm', 'onnxruntime-web'] },
   // Worker Session mengimpor modul ES (dan LibRaw memuat pthread sebagai modul).
   worker: { format: 'es' },
-  build: { target: 'es2022' },
+  build: {
+    target: 'es2022',
+    rollupOptions: {
+      output: {
+        /**
+         * Vendor UI dipisah supaya cache lintas rilis (`index` hanya berubah
+         * bila kode app berubah; vendor hanya bila dependensi naik). HANYA
+         * paket yang dipakai thread UI: worker Session/kedalaman/retouch
+         * tidak boleh dibagi chunk-nya (isolasi entry `session/worker.ts`
+         * melawan evaluasi-ulang modul di iOS, dan runtime ORT/LibRaw).
+         */
+        manualChunks: (id) => {
+          if (!id.includes('node_modules')) return undefined;
+          if (id.includes('node_modules/motion')) return 'vendor-motion';
+          if (id.includes('node_modules/lucide-react')) return 'vendor-lucide';
+          if (id.includes('node_modules/react-dom') || id.includes('node_modules/react/') || id.includes('node_modules/scheduler')) return 'vendor-react';
+          return undefined;
+        },
+      },
+    },
+  },
 });
