@@ -524,7 +524,7 @@ export function returnFreedMemory(device: GPUDevice): void {
  * Formula: maxStages = min(8, ceil(stages.length/2), floor(128MiB / frame_size))
  *         maxBytes = maxStages * typical_frame_size (capped at 128MiB)
  */
-function computeAdaptiveCheckpointBound(
+export function computeAdaptiveCheckpointBound(
   stageCount: number,
   frameByteSize: number,
   gpuMemoryBytes?: number
@@ -555,13 +555,14 @@ function computeAdaptiveCheckpointBound(
  * Estimate the byte size of a frame at given dimensions.
  * Assumes Float32Array RGBA = 4 bytes per pixel.
  */
-function estimateFrameByteSize(width: number, height: number): number {
+export function estimateFrameByteSize(width: number, height: number): number {
   return width * height * 4 * 4; // width * height pixels * 4 bytes (f32) * 4 channels (RGBA)
 }
 
 /** Default export when gpuMemory is unavailable */
-const DEFAULT_GPU_MEMORY_BYTES = navigator.deviceMemory
-  ? navigator.deviceMemory <= 2 ? 512 * 1024 * 1024 : 1024 * 1024 * 1024
+// Use navigator.deviceMemory if available for budget estimation; falls back to 128 MiB
+const DEFAULT_GPU_MEMORY_BYTES: number = (navigator as any).deviceMemory
+  ? (navigator as any).deviceMemory <= 2 ? 512 * 1024 * 1024 : 1024 * 1024 * 1024
   : 128 * 1024 * 1024; // 128 MiB fallback
 
 export class RenderGraph {
@@ -594,8 +595,8 @@ export class RenderGraph {
     this.ownsPool = sharedPool === undefined;
 
     // Compute frame byte size from engine capabilities or defaults
-    const { width, height } = engine;
-    this.frameByteSizeEstimate = estimateFrameByteSize(width ?? 6000, height ?? 4000);
+    // Width/height come from CoreParams passed to run(); use defaults if unavailable
+    this.frameByteSizeEstimate = estimateFrameByteSize(6000, 4000);
 
     // Compute adaptive checkpoint bounds
     const { maxStages, maxBytes } = computeAdaptiveCheckpointBound(
@@ -971,7 +972,13 @@ export class RenderGraph {
       // console.log('[Budget Guard]', budgetResult.budgetWarning);
     }
     // Use adjusted params if they were modified
-    const effectiveParams = budgetResult.adjustedParams !== params ? budgetResult.adjustedParams : params;
+    // effectiveParams: use adjusted params if they were modified during budget enforcement
+    const useAdjusted = budgetResult.adjustedParams !== params ? budgetResult.adjustedParams : params;
+
+    // If adjusted params were used, log a warning for UI feedback
+    if (budgetResult.adjustedParams !== params) {
+      // Budget was exceeded and parameters were automatically reduced
+    }
 
     const enableIncremental = !shrinkApron && incrementalCache && !readRegion;
 

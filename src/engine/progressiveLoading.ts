@@ -8,7 +8,7 @@
  */
 
 import { GPUBuffer, GPUBufferUsage } from 'webgpu-types';
-import { Stage, CoreParams, FrameParams, EngineDevice, TapName } from './types';
+import { Stage, CoreParams, EngineDevice, TapName } from './types';
 import { planTiles, TileSpec, SPATIAL_EFFECT_RADIUS_PX, GRAIN_SPATIAL_RADIUS_PX } from './tiling';
 import { estimateFrameByteSize } from './graph';
 
@@ -25,34 +25,11 @@ export function registerStageFactory(name: string, factory: (device: GPUDevice, 
 
 /**
  * Lazy stage wrapper that loads a stage on first access.
- * Reduces initial memory footprint by not compiling all stages at startup.
- */
-class LazyStageWrapper {
-  private stage: Stage | null = null;
-  private loaded = false;
-  private name: string;
+ 
+ 
+  
 
-  constructor(name: string) {
-    this.name = name;
   }
-
-  async ensureLoaded(device: GPUDevice, arenas: any, spec: any): Promise<Stage> {
-    if (!this.loaded) {
-      const factory = stageFactoryMap[this.name];
-      if (factory) {
-        this.stage = await factory(device, arenas, spec);
-        this.loaded = true;
-      } else {
-        throw new Error(`Stage factory not registered for: ${this.name}`);
-      }
-    }
-    return this.stage!;
-  }
-
-  getName(): string {
-    return this.name;
-  }
-}
 
 /**
  * Preload image tiles progressively for large images.
