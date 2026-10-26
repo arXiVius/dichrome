@@ -218,10 +218,6 @@ export interface CoreParams {
   activeOriginX: number;
   /** Origin sub-rektangel aktif DI DALAM buffer (width/height) — lihat dokumentasi di atas. */
   activeOriginY: number;
-  /** Amount of grain effect (0-100) grainAmount: number;
-  /** Amount of halation effect (0-100) halationAmount: number;
-  /** Amount of diffusion effect (0-100) diffusionAmount: number;
-  /** Print exposure compensation (EV) printExposure: number;
   /** 0 berarti "seluruh buffer" (width), BUKAN "nol piksel" — lihat dokumentasi di atas. */
   activeWidth: number;
   /** 0 berarti "seluruh buffer" (height), BUKAN "nol piksel" — lihat dokumentasi di atas. */
@@ -266,10 +262,6 @@ const FIELDS = [
   ['tileOriginY', 'u32'],
   ['activeOriginX', 'u32'],
   ['activeOriginY', 'u32'],
-  ['grainAmount', 'f32'],
-  ['halationAmount', 'f32'],
-  ['diffusionAmount', 'f32'],
-  ['printExposure', 'f32'],
   ['activeWidth', 'u32'],
   ['activeHeight', 'u32'],
 ] as const satisfies ReadonlyArray<readonly [keyof CoreParams, Kind]>;

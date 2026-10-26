@@ -559,12 +559,6 @@ export function estimateFrameByteSize(width: number, height: number): number {
   return width * height * 4 * 4; // width * height pixels * 4 bytes (f32) * 4 channels (RGBA)
 }
 
-/** Default export when gpuMemory is unavailable */
-// Use navigator.deviceMemory if available for budget estimation; falls back to 128 MiB
-const DEFAULT_GPU_MEMORY_BYTES: number = (navigator as any).deviceMemory
-  ? (navigator as any).deviceMemory <= 2 ? 512 * 1024 * 1024 : 1024 * 1024 * 1024
-  : 128 * 1024 * 1024; // 128 MiB fallback
-
 export class RenderGraph {
   private readonly stages: Stage[] = [];
   /**
@@ -606,95 +600,6 @@ export class RenderGraph {
     );
     this.adaptiveMaxStages = maxStages;
     this.adaptiveMaxBytes = maxBytes;
-  }
-
-  /**
-   * GPU Budget Guard: checks if the proposed render will exceed the GPU memory budget.
-   * If over budget, auto-reduces visual quality parameters (grain, halation, diffusion)
-   * and returns adjusted params with feedback indicator.
-   *
-   * @param params The proposed core parameters for rendering
-   * @param estimatedBytes Estimated byte size of the frame to render
-   * @returns { success, adjustedParams, budgetWarning } - success is always true,
-   *          adjustedParams has reduced parameters if needed, budgetWarning is a message
-   *          if any parameters were reduced (for UI feedback)
-   */
-  checkBudget(params: CoreParams, estimatedBytes: number): {
-    success: boolean;
-    adjustedParams: CoreParams;
-    budgetWarning: string | null;
-  } {
-    // Use the adaptive max bytes from our checkpoint budget
-    const budgetLimit = this.adaptiveMaxBytes;
-
-    // If the estimated frame size is within budget, no adjustment needed
-    if (estimatedBytes <= budgetLimit) {
-      return {
-        success: true,
-        adjustedParams: params,
-        budgetWarning: null,
-      };
-    }
-
-    // Calculate reduction ratio
-    const reductionRatio = budgetLimit / Math.max(1, estimatedBytes);
-
-    // Start with a copy of params
-    const adjusted: CoreParams = { ...params };
-    const reductions: string[] = [];
-
-    // Reduce grain amount (least visual impact, most budget impact)
-    if (adjusted.grainAmount !== undefined && adjusted.grainAmount > 0) {
-      const newGrain = Math.max(0, Math.floor(adjusted.grainAmount * reductionRatio));
-      if (newGrain < adjusted.grainAmount) {
-        adjusted.grainAmount = newGrain;
-        reductions.push('grain');
-      }
-    }
-
-    // Reduce halation amount
-    if (adjusted.halationAmount !== undefined && adjusted.halationAmount > 0) {
-      const newHalation = Math.max(0, Math.floor(adjusted.halationAmount * reductionRatio));
-      if (newHalation < adjusted.halationAmount) {
-        adjusted.halationAmount = newHalation;
-        reductions.push('halation');
-      }
-    }
-
-    // Reduce diffusion strength (most expensive, reduce last)
-    if (adjusted.diffusionAmount !== undefined && adjusted.diffusionAmount > 0) {
-      const newDiffusion = Math.max(0, Math.floor(adjusted.diffusionAmount * reductionRatio));
-      if (newDiffusion < adjusted.diffusionAmount) {
-        adjusted.diffusionAmount = newDiffusion;
-        reductions.push('diffusion');
-      }
-    }
-
-    // Reduce print exposure as last resort
-    if (adjusted.printExposure && adjusted.printExposure > 0.1) {
-      const newExposure = Math.max(0.1, adjusted.printExposure * reductionRatio);
-      if (newExposure < adjusted.printExposure) {
-        adjusted.printExposure = newExposure;
-        reductions.push('print exposure');
-      }
-    }
-
-    // If still over budget after parameter reductions, downscale the image
-    if (estimatedBytes > budgetLimit && reductionRatio < 0.7) {
-      // Propose a downscale factor - this would be used by the renderer
-      adjusted.downscaleFactor = Math.min(0.5, reductionRatio);
-      reductions.push('downscale');
-    }
-
-    const budgetWarning = reductions.length > 0
-      ? `Budget guard reduced: ${reductions.join(', ')}`
-      : null;
-
-    return {
-      success: true,
-      adjustedParams: adjusted,
-      budgetWarning,
-    };
   }
 
   addStage(stage: Stage): void {
@@ -962,23 +867,6 @@ export class RenderGraph {
 
     const { device } = this.engine;
     const bytes = input.byteLength;
-
-    // GPU Budget Guard: check and auto-reduce if over budget
-    const estimatedBytes = bytes; // input already represents the full frame size
-    const budgetResult = this.checkBudget(params, estimatedBytes);
-    if (budgetResult.budgetWarning) {
-      // Could emit event or update UI here - for now just log
-      // In a real UI, this would update a budget status indicator
-      // console.log('[Budget Guard]', budgetResult.budgetWarning);
-    }
-    // Use adjusted params if they were modified
-    // effectiveParams: use adjusted params if they were modified during budget enforcement
-    const useAdjusted = budgetResult.adjustedParams !== params ? budgetResult.adjustedParams : params;
-
-    // If adjusted params were used, log a warning for UI feedback
-    if (budgetResult.adjustedParams !== params) {
-      // Budget was exceeded and parameters were automatically reduced
-    }
 
     const enableIncremental = !shrinkApron && incrementalCache && !readRegion;
 
