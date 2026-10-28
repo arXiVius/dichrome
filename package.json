@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "license": "GPL-3.0-or-later",
-  "description": "Palma — spectral film simulation in the browser, on WebGPU.",
+  "description": "Palma — spectral film simulation in the browser, on WebGPU (site: Gamma).",
   "scripts": {
     "dev": "vite",
     "preview": "vite preview",

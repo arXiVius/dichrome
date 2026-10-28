@@ -532,21 +532,18 @@ export function computeAdaptiveCheckpointBound(
   // Base budget: 128 MiB, adjustable via device memory detection
   const baseBudget = gpuMemoryBytes ?? 128 * 1024 * 1024;
 
-  // Factor 1: stages count - more stages means fewer checkpoints allowed
-  const stagesFactor = Math.ceil(stageCount / 2);
+  // Factor 1: stages count - capped at hard ceiling of 8 stages
+  const hardCeiling = 8;
+  const stagesFactor = stageCount > 0 ? Math.min(hardCeiling, stageCount) : hardCeiling;
 
   // Factor 2: frame size - larger frames consume more budget per checkpoint
-  const budgetFactor = Math.floor(baseBudget / Math.max(1, frameByteSize));
+  const budgetFactor = frameByteSize > 0 ? Math.floor(baseBudget / frameByteSize) : hardCeiling;
 
-  // Factor 3: hard ceiling of 8 stages
-  const hardCeiling = 8;
+  // Adaptive: take the most restrictive of the factors
+  const maxStages = Math.min(hardCeiling, stagesFactor, Math.max(1, budgetFactor));
 
-  // Adaptive: take the most restrictive of the three factors
-  const maxStages = Math.min(hardCeiling, stagesFactor, budgetFactor);
-
-  // Compute max bytes: each checkpoint can be at most budgetFactor bytes,
-  // but we cap at hardCeile stages' worth
-  const maxBytes = Math.min(baseBudget, maxStages * frameByteSize);
+  // Compute max bytes: each checkpoint can be at most baseBudget
+  const maxBytes = baseBudget;
 
   return { maxStages, maxBytes };
 }
@@ -578,6 +575,7 @@ export class RenderGraph {
   private adaptiveMaxStages = 8;
   private adaptiveMaxBytes = 128 * 1024 * 1024;
   private frameByteSizeEstimate = 0;
+  private gpuMemoryBytes?: number;
 
   constructor(
     private readonly engine: EngineDevice,
@@ -587,16 +585,16 @@ export class RenderGraph {
   ) {
     this.pool = sharedPool ?? new ScratchPool(engine.device);
     this.ownsPool = sharedPool === undefined;
-
-    // Compute frame byte size from engine capabilities or defaults
-    // Width/height come from CoreParams passed to run(); use defaults if unavailable
+    this.gpuMemoryBytes = gpuMemoryBytes;
     this.frameByteSizeEstimate = estimateFrameByteSize(6000, 4000);
+    this.updateAdaptiveBounds();
+  }
 
-    // Compute adaptive checkpoint bounds
+  private updateAdaptiveBounds(frameBytes?: number): void {
     const { maxStages, maxBytes } = computeAdaptiveCheckpointBound(
       this.stages.length,
-      this.frameByteSizeEstimate,
-      gpuMemoryBytes
+      frameBytes ?? this.frameByteSizeEstimate,
+      this.gpuMemoryBytes
     );
     this.adaptiveMaxStages = maxStages;
     this.adaptiveMaxBytes = maxBytes;
@@ -604,6 +602,7 @@ export class RenderGraph {
 
   addStage(stage: Stage): void {
     this.stages.push(stage);
+    this.updateAdaptiveBounds();
   }
 
   /** Byte dan jumlah checkpoint yang sedang dipegang (pengujian, diagnosis memori). */
@@ -867,6 +866,7 @@ export class RenderGraph {
 
     const { device } = this.engine;
     const bytes = input.byteLength;
+    this.updateAdaptiveBounds(bytes);
 
     const enableIncremental = !shrinkApron && incrementalCache && !readRegion;
 
